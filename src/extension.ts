@@ -35,18 +35,26 @@ async function copyConversation(fullFormat: boolean) {
       return;
     }
 
-    const selected = await vscode.window.showQuickPick(
-      conversations.map(c => ({
-        label: c.id,
-        description: formatRelativeTime(c.modified),
-        detail: `Last modified: ${c.modified.toLocaleString()}`,
-        conversationId: c.id,
-      })),
+    const client = new AntigravityLsClient(lsInfo);
+
+    const items = await vscode.window.withProgress(
       {
-        placeHolder: 'Select a conversation to copy',
-        title: 'Antigravity: Copy Full Conversation (with Thoughts)',
+        location: vscode.ProgressLocation.Notification,
+        title: 'Loading conversations...',
+        cancellable: false,
+      },
+      async () => {
+        const previews = await fetchConversationPreviews(client, conversations);
+        return previews;
       }
     );
+
+    const selected = await vscode.window.showQuickPick(items, {
+      placeHolder: 'Select a conversation to copy',
+      title: 'Antigravity: Copy Full Conversation (with Thoughts)',
+      matchOnDescription: true,
+      matchOnDetail: true,
+    });
 
     if (!selected) return;
 
@@ -57,21 +65,6 @@ async function copyConversation(fullFormat: boolean) {
         cancellable: false,
       },
       async (progress) => {
-        const client = new AntigravityLsClient(lsInfo);
-
-        // Verify connection
-        progress.report({ message: 'Connecting to language server...' });
-        try {
-          await client.heartbeat();
-        } catch {
-          cachedLsInfo = null;
-          throw new Error(
-            'Cannot connect to the Antigravity language server. ' +
-            'It may have restarted. Please try again.'
-          );
-        }
-
-        // Get the full trajectory with DEBUG verbosity (includes thoughts)
         progress.report({ message: 'Fetching trajectory with thoughts...' });
         let markdown: string;
 
@@ -79,10 +72,8 @@ async function copyConversation(fullFormat: boolean) {
           const trajectory = await client.getCascadeTrajectory(selected.conversationId, 1);
 
           if (fullFormat) {
-            // Format the full trajectory ourselves (most detailed)
             markdown = formatTrajectoryAsMarkdown(trajectory, selected.conversationId);
           } else {
-            // Get the standard markdown and inject thoughts
             progress.report({ message: 'Getting formatted conversation...' });
             try {
               const baseMarkdown = await client.convertTrajectoryToMarkdown(selected.conversationId);
@@ -92,7 +83,6 @@ async function copyConversation(fullFormat: boolean) {
             }
           }
         } catch (err: any) {
-          // Fallback: standard markdown without thoughts
           progress.report({ message: 'Falling back to standard copy...' });
           try {
             markdown = await client.convertTrajectoryToMarkdown(selected.conversationId);
@@ -133,6 +123,67 @@ async function discoverWithProgress(): Promise<LanguageServerInfo | null> {
       return info;
     }
   );
+}
+
+interface ConversationPickItem extends vscode.QuickPickItem {
+  conversationId: string;
+}
+
+async function fetchConversationPreviews(
+  client: AntigravityLsClient,
+  conversations: { id: string; modified: Date }[],
+): Promise<ConversationPickItem[]> {
+  const BATCH_SIZE = 5;
+  const results: ConversationPickItem[] = [];
+
+  for (let i = 0; i < conversations.length; i += BATCH_SIZE) {
+    const batch = conversations.slice(i, i + BATCH_SIZE);
+    const previews = await Promise.allSettled(
+      batch.map(c => getFirstUserMessage(client, c.id))
+    );
+
+    for (let j = 0; j < batch.length; j++) {
+      const c = batch[j];
+      const result = previews[j];
+      const preview = result.status === 'fulfilled' ? result.value : '';
+      const timeStr = formatRelativeTime(c.modified);
+
+      results.push({
+        label: preview
+          ? truncate(preview, 80)
+          : `Conversation ${c.id.substring(0, 8)}...`,
+        description: timeStr,
+        detail: preview
+          ? `ID: ${c.id}`
+          : `ID: ${c.id} — Last modified: ${c.modified.toLocaleString()}`,
+        conversationId: c.id,
+      });
+    }
+  }
+
+  return results;
+}
+
+async function getFirstUserMessage(client: AntigravityLsClient, cascadeId: string): Promise<string> {
+  const traj = await client.getCascadeTrajectory(cascadeId, 2);
+  const steps = traj?.trajectory?.steps || [];
+
+  for (const step of steps) {
+    if (step.type === 'CORTEX_STEP_TYPE_USER_INPUT') {
+      const input = step.userInput;
+      if (!input) continue;
+      const text = input.userResponse || input.items?.map((i: any) => i.text).join(' ') || '';
+      if (text.trim()) return text.trim();
+    }
+  }
+
+  return '';
+}
+
+function truncate(text: string, maxLen: number): string {
+  const oneLine = text.replace(/[\r\n]+/g, ' ').trim();
+  if (oneLine.length <= maxLen) return oneLine;
+  return oneLine.substring(0, maxLen - 1) + '…';
 }
 
 function countThoughts(markdown: string): number {
