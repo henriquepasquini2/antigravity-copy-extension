@@ -4,6 +4,16 @@ import { LanguageServerInfo } from './discovery';
 
 const SERVICE = 'exa.language_server_pb.LanguageServerService';
 
+export interface CascadeSummary {
+  summary: string;
+  stepCount: number;
+  lastModifiedTime: string;
+  createdTime: string;
+  trajectoryId: string;
+  status: string;
+  workspaces?: { workspaceFolderAbsoluteUri: string }[];
+}
+
 /**
  * Client for the Antigravity language server using ConnectRPC over HTTP/2.
  *
@@ -24,6 +34,15 @@ export class AntigravityLsClient {
 
   async heartbeat(): Promise<any> {
     return this.call('Heartbeat', {});
+  }
+
+  /**
+   * Returns a map of cascadeId -> summary for all trajectories
+   * known to the current language server session.
+   */
+  async getAllCascadeTrajectories(): Promise<Record<string, CascadeSummary>> {
+    const response = await this.call('GetAllCascadeTrajectories', {});
+    return response?.trajectorySummaries || {};
   }
 
   async convertTrajectoryToMarkdown(conversationId: string): Promise<string> {
