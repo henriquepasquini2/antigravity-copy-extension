@@ -276,7 +276,7 @@ function formatCodeAction(step: any, lines: string[]): void {
 }
 
 /**
- * Clean trace format for AI training data.
+ * Clean trace format with minimal markup.
  * No generated metadata, no HTML, no truncation, no decorative markup.
  * Every step preserved, thoughts inline, role-annotated.
  */

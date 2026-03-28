@@ -17,7 +17,7 @@ This extension connects directly to the running Antigravity language server and 
 - **Three output modes:**
   - *Copy Conversation with Thoughts* — Antigravity's standard markdown + thought blocks prepended
   - *Copy Full Conversation Trace* — Detailed custom format with inline thoughts, tool calls, and code actions
-  - *Copy Clean Trace (Training Data)* — Minimal role-annotated format: no generated metadata, no HTML, no decoration — just `## User`, `## Thinking`, `## Assistant`, `## Tool Call`, `## Tool Result`
+  - *Copy Clean Trace* — Minimal role-annotated format: no generated metadata, no HTML, no decoration — just `## User`, `## Thinking`, `## Assistant`, `## Tool Call`, `## Tool Result`
 - **Collapsible sections** — Thoughts wrapped in `<details>` tags for clean Markdown
 - **Conversation picker** — Select from all your conversations, sorted by recency
 - **Zero configuration** — Automatically discovers the language server, ports, and auth tokens
@@ -29,7 +29,7 @@ This extension connects directly to the running Antigravity language server and 
 3. Run one of:
    - **Antigravity: Copy Conversation with Thoughts**
    - **Antigravity: Copy Full Conversation Trace (Detailed)**
-   - **Antigravity: Copy Clean Conversation Trace (Training Data)**
+   - **Antigravity: Copy Clean Conversation Trace**
 4. Pick the conversation from the list
 5. Done — the full Markdown is on your clipboard
 
@@ -39,7 +39,7 @@ This extension connects directly to the running Antigravity language server and 
 |-----------------------|--------------------------------------------|
 | `Ctrl+Shift+Alt+C`   | Copy Conversation with Thoughts            |
 | `Ctrl+Shift+Alt+T`   | Copy Full Conversation Trace (Detailed)    |
-| `Ctrl+Shift+Alt+D`   | Copy Clean Trace (Training Data)           |
+| `Ctrl+Shift+Alt+D`   | Copy Clean Conversation Trace              |
 
 On macOS, replace `Ctrl` with `Cmd`.
 
