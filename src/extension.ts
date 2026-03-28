@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import { discoverLanguageServer, listConversations, LanguageServerInfo } from './discovery';
 import { AntigravityLsClient } from './lsClient';
-import { formatTrajectoryAsMarkdown, injectThoughtsIntoMarkdown } from './formatter';
+import { formatTrajectoryAsMarkdown, formatTrajectoryClean, injectThoughtsIntoMarkdown } from './formatter';
 
 let cachedLsInfo: LanguageServerInfo | null = null;
 
@@ -9,11 +9,15 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(
     vscode.commands.registerCommand(
       'antigravity-copy-full.copyConversation',
-      () => copyConversation(false),
+      () => copyConversation('standard'),
     ),
     vscode.commands.registerCommand(
       'antigravity-copy-full.copyConversationFull',
-      () => copyConversation(true),
+      () => copyConversation('detailed'),
+    ),
+    vscode.commands.registerCommand(
+      'antigravity-copy-full.copyConversationClean',
+      () => copyConversation('clean'),
     ),
   );
 }
@@ -22,7 +26,9 @@ export function deactivate() {
   cachedLsInfo = null;
 }
 
-async function copyConversation(fullFormat: boolean) {
+type CopyMode = 'standard' | 'detailed' | 'clean';
+
+async function copyConversation(mode: CopyMode) {
   try {
     const lsInfo = await discoverWithProgress();
     if (!lsInfo) return;
@@ -71,7 +77,9 @@ async function copyConversation(fullFormat: boolean) {
         try {
           const trajectory = await client.getCascadeTrajectory(selected.conversationId, 1);
 
-          if (fullFormat) {
+          if (mode === 'clean') {
+            markdown = formatTrajectoryClean(trajectory);
+          } else if (mode === 'detailed') {
             markdown = formatTrajectoryAsMarkdown(trajectory, selected.conversationId);
           } else {
             progress.report({ message: 'Getting formatted conversation...' });
@@ -200,7 +208,7 @@ function handleError(err: any) {
     ).then(action => {
       if (action === 'Retry') {
         cachedLsInfo = null;
-        copyConversation(false);
+        copyConversation('standard');
       }
     });
   } else {

@@ -275,6 +275,178 @@ function formatCodeAction(step: any, lines: string[]): void {
   lines.push('');
 }
 
+/**
+ * Clean trace format for AI training data.
+ * No generated metadata, no HTML, no truncation, no decorative markup.
+ * Every step preserved, thoughts inline, role-annotated.
+ */
+export function formatTrajectoryClean(trajectoryResponse: any): string {
+  const steps = trajectoryResponse?.trajectory?.steps || [];
+  if (steps.length === 0) return '';
+
+  const lines: string[] = [];
+
+  for (const step of steps) {
+    const type = step.type || '';
+
+    switch (type) {
+      case 'CORTEX_STEP_TYPE_USER_INPUT': {
+        const input = step.userInput;
+        if (!input) break;
+        const text = input.userResponse || input.items?.map((i: any) => i.text).join('\n') || '';
+        if (text.trim()) {
+          lines.push('## User');
+          lines.push('');
+          lines.push(text.trim());
+          lines.push('');
+        }
+        break;
+      }
+
+      case 'CORTEX_STEP_TYPE_PLANNER_RESPONSE': {
+        const pr = step.plannerResponse;
+        if (!pr) break;
+
+        if (pr.thinking) {
+          lines.push('## Thinking');
+          lines.push('');
+          lines.push(pr.thinking);
+          lines.push('');
+        }
+
+        const responseText = pr.text || pr.content || pr.markdown || '';
+        if (responseText) {
+          lines.push('## Assistant');
+          lines.push('');
+          lines.push(responseText);
+          lines.push('');
+        }
+
+        if (pr.toolCalls && pr.toolCalls.length > 0) {
+          for (const tc of pr.toolCalls) {
+            const name = tc.name || tc.toolName || 'unknown';
+            lines.push(`## Tool Call: ${name}`);
+            lines.push('');
+            if (tc.arguments) {
+              lines.push('```json');
+              lines.push(typeof tc.arguments === 'string' ? tc.arguments : JSON.stringify(tc.arguments, null, 2));
+              lines.push('```');
+            }
+            lines.push('');
+          }
+        }
+        break;
+      }
+
+      case 'CORTEX_STEP_TYPE_EPHEMERAL_MESSAGE': {
+        const msg = step.ephemeralMessage;
+        if (msg?.content) {
+          lines.push('## System');
+          lines.push('');
+          lines.push(msg.content);
+          lines.push('');
+        }
+        break;
+      }
+
+      case 'CORTEX_STEP_TYPE_LIST_DIRECTORY': {
+        const dir = step.listDirectory;
+        if (!dir) break;
+        const dirPath = dir.directoryPath || dir.directory_path || dir.path || '';
+        lines.push(`## Tool Result: list_dir`);
+        lines.push('');
+        lines.push(`Directory: ${dirPath}`);
+        if (dir.entries && dir.entries.length > 0) {
+          lines.push('');
+          for (const entry of dir.entries) {
+            const name = entry.name || entry.fileName || '';
+            const isDir = entry.isDirectory || entry.type === 'directory';
+            lines.push(`${isDir ? '[dir]' : '[file]'} ${name}`);
+          }
+        }
+        lines.push('');
+        break;
+      }
+
+      case 'CORTEX_STEP_TYPE_VIEW_FILE': {
+        const vf = step.viewFile;
+        if (!vf) break;
+        const filePath = vf.filePath || vf.file_path || vf.path || '';
+        lines.push(`## Tool Result: view_file`);
+        lines.push('');
+        lines.push(`File: ${filePath}`);
+        if (vf.content || vf.contents) {
+          lines.push('');
+          lines.push('```');
+          lines.push(vf.content || vf.contents);
+          lines.push('```');
+        }
+        lines.push('');
+        break;
+      }
+
+      case 'CORTEX_STEP_TYPE_RUN_COMMAND': {
+        const cmd = step.runCommand;
+        if (!cmd) break;
+        const command = cmd.command || cmd.input || '';
+        if (command) {
+          lines.push('## Tool Call: run_command');
+          lines.push('');
+          lines.push('```bash');
+          lines.push(command);
+          lines.push('```');
+          lines.push('');
+        }
+        break;
+      }
+
+      case 'CORTEX_STEP_TYPE_COMMAND_STATUS': {
+        const cs = step.commandStatus;
+        if (!cs) break;
+        if (cs.output) {
+          lines.push('## Tool Result: command_output');
+          lines.push('');
+          lines.push('```');
+          lines.push(cs.output);
+          lines.push('```');
+          lines.push('');
+        }
+        break;
+      }
+
+      case 'CORTEX_STEP_TYPE_CODE_ACTION': {
+        const ca = step.codeAction;
+        if (!ca) break;
+        const filePath = ca.filePath || ca.file_path || ca.uri || '';
+        lines.push(`## Tool Call: code_edit`);
+        lines.push('');
+        lines.push(`File: ${filePath}`);
+        if (ca.description || ca.title) {
+          lines.push(ca.description || ca.title);
+        }
+        if (ca.unifiedDiff || ca.diff) {
+          const diff = ca.unifiedDiff || ca.diff;
+          const diffStr = typeof diff === 'string' ? diff : (diff.diff || JSON.stringify(diff, null, 2));
+          lines.push('');
+          lines.push('```diff');
+          lines.push(diffStr);
+          lines.push('```');
+        }
+        lines.push('');
+        break;
+      }
+
+      case 'CORTEX_STEP_TYPE_CHECKPOINT':
+        break;
+
+      default:
+        break;
+    }
+  }
+
+  return lines.join('\n').replace(/\n{3,}/g, '\n\n').trim() + '\n';
+}
+
 function parseDuration(duration: string): string {
   const match = duration.match(/^(\d+(?:\.\d+)?)s$/);
   if (match) {
