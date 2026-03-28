@@ -1,68 +1,70 @@
 # Antigravity Copy Full Conversation
 
-Copy the **complete** trace of Antigravity chat conversations — including the AI's **thought process and reasoning** — to your clipboard as Markdown.
+Copy the **complete** trace of Antigravity chat conversations — including the AI's **thought process**, web searches, image prompts, command outputs, code edits, and full responses — to your clipboard as Markdown.
 
 ## The Problem
 
-Antigravity's built-in Export and Copy buttons only include the visible output text. The AI's internal reasoning (the "thinking" / "thought process") is stripped out entirely. If you want to review, share, or archive the full conversation — thoughts included — there's no native way to do it.
+Antigravity's built-in Export and Copy buttons only include the visible output text. The AI's internal reasoning (the "thinking" / "thought process") is stripped out, and many details like web search results, command outputs, and file contents are omitted or summarized. If you want the full, unabridged conversation trace, there's no native way to get it.
 
 ## The Solution
 
-This extension connects directly to the running Antigravity language server and fetches the full conversation trajectory at **DEBUG verbosity**, which includes the thought/reasoning data that the standard UI omits.
+This extension connects directly to the running Antigravity language server and fetches the full conversation trajectory at **DEBUG verbosity**, which includes everything the standard UI omits. The output is a clean Markdown trace in chat order — no HTML, no metadata, no truncation.
 
 ## Features
 
-- **Full thought process** — Every thinking block the AI produced, with duration
-- **Complete tool trace** — File reads, directory listings, command executions, code edits with diffs
-- **Three output modes:**
-  - *Copy Conversation with Thoughts* — Antigravity's standard markdown + thought blocks prepended
-  - *Copy Full Conversation Trace* — Detailed custom format with inline thoughts, tool calls, and code actions
-  - *Copy Clean Trace* — Minimal role-annotated format: no generated metadata, no HTML, no decoration — just `## User`, `## Thinking`, `## Assistant`, `## Tool Call`, `## Tool Result`
-- **Collapsible sections** — Thoughts wrapped in `<details>` tags for clean Markdown
-- **Conversation picker** — Select from all your conversations, sorted by recency
+- **Full thought process** — Every thinking block the AI produced, inline in chat order
+- **Complete tool trace** — Web searches (with full results), directory listings, file views, command executions with output, code edits, image generation prompts, grep searches, browser actions, and more
+- **All 18+ step types** — `SEARCH_WEB`, `RUN_COMMAND`, `COMMAND_STATUS`, `LIST_DIRECTORY`, `VIEW_FILE`, `CODE_ACTION`, `GENERATE_IMAGE`, `GREP_SEARCH`, `BROWSER_SUBAGENT`, `NOTIFY_USER`, `ERROR_MESSAGE`, `READ_RESOURCE`, and others
+- **Full assistant responses** — The actual AI text response, not just tool call summaries
+- **Conversation picker** — Select from all active conversations with titles, sorted by recency
 - **Zero configuration** — Automatically discovers the language server, ports, and auth tokens
 
 ## Usage
 
 1. Make sure **Antigravity is running** with at least one chat conversation
 2. Open the Command Palette (`Ctrl+Shift+P`)
-3. Run one of:
-   - **Antigravity: Copy Conversation with Thoughts**
-   - **Antigravity: Copy Full Conversation Trace (Detailed)**
-   - **Antigravity: Copy Clean Conversation Trace**
+3. Run **Antigravity: Copy Full Conversation**
 4. Pick the conversation from the list
 5. Done — the full Markdown is on your clipboard
 
-### Keyboard Shortcuts
+### Keyboard Shortcut
 
-| Shortcut              | Command                                    |
-|-----------------------|--------------------------------------------|
-| `Ctrl+Shift+Alt+C`   | Copy Conversation with Thoughts            |
-| `Ctrl+Shift+Alt+T`   | Copy Full Conversation Trace (Detailed)    |
-| `Ctrl+Shift+Alt+D`   | Copy Clean Conversation Trace              |
+| Shortcut              | Command                     |
+|-----------------------|-----------------------------|
+| `Ctrl+Shift+Alt+C`   | Copy Full Conversation      |
 
 On macOS, replace `Ctrl` with `Cmd`.
 
 ## Example Output
 
-The copied Markdown includes sections like:
+The copied Markdown reads like a natural transcript of the full session:
 
 ```markdown
-## Turn 1 — User
+**Crafting the Landing Page**
 
-Build a REST API for user management.
+I'm currently focused on the hero section. It needs to be impactful!
+I'm brainstorming visuals and headlines to capture attention...
 
-<details>
-<summary><strong>Thought Process (3.9s)</strong></summary>
+Searched web: "Cellares IDMO Cell Shuttle branding colors and design"
 
-I need to set up a Node.js project with Express. Let me first
-check the current directory structure and existing dependencies...
+The branding and color palette reflect a "sleek, smart, and refined"
+aesthetic, balancing technical innovation with a futuristic vision...
 
-</details>
+Ran command
+…\project > npx -y create-vite@latest ./ --template react
+Exit code 0
 
-### Assistant Response
+index.css#L1-120
 
-I'll create a REST API with the following endpoints...
+Prompt
+Futuristic biotech manufacturing facility with glowing cyan
+and aqua light trails, robotic arms, dark navy atmosphere...
+
+Edited App.tsx
+Implement the landing page with Hero, IDMO, and Stats sections.
+
+I've completely redesigned the home page, creating a premium
+landing page that showcases the IDMO platform and Cell Shuttle...
 ```
 
 ## Requirements
