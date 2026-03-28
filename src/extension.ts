@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import { discoverLanguageServer, LanguageServerInfo } from './discovery';
 import { AntigravityLsClient, CascadeSummary } from './lsClient';
-import { formatTrajectoryAsMarkdown, formatTrajectoryClean, injectThoughtsIntoMarkdown } from './formatter';
+import { formatTrajectoryClean } from './formatter';
 
 let cachedLsInfo: LanguageServerInfo | null = null;
 
@@ -9,15 +9,7 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(
     vscode.commands.registerCommand(
       'antigravity-copy-full.copyConversation',
-      () => copyConversation('standard'),
-    ),
-    vscode.commands.registerCommand(
-      'antigravity-copy-full.copyConversationFull',
-      () => copyConversation('detailed'),
-    ),
-    vscode.commands.registerCommand(
-      'antigravity-copy-full.copyConversationClean',
-      () => copyConversation('clean'),
+      () => copyConversation(),
     ),
   );
 }
@@ -26,9 +18,7 @@ export function deactivate() {
   cachedLsInfo = null;
 }
 
-type CopyMode = 'standard' | 'detailed' | 'clean';
-
-async function copyConversation(mode: CopyMode) {
+async function copyConversation() {
   try {
     const lsInfo = await discoverWithProgress();
     if (!lsInfo) return;
@@ -49,15 +39,9 @@ async function copyConversation(mode: CopyMode) {
       return;
     }
 
-    const titles: Record<CopyMode, string> = {
-      standard: 'Antigravity: Copy Conversation with Thoughts',
-      detailed: 'Antigravity: Copy Full Conversation Trace (Detailed)',
-      clean: 'Antigravity: Copy Clean Conversation Trace',
-    };
-
     const selected = await vscode.window.showQuickPick(items, {
       placeHolder: 'Select a conversation to copy',
-      title: titles[mode],
+      title: 'Antigravity: Copy Full Conversation',
       matchOnDescription: true,
       matchOnDetail: true,
     });
@@ -71,43 +55,16 @@ async function copyConversation(mode: CopyMode) {
         cancellable: false,
       },
       async (progress) => {
-        progress.report({ message: 'Fetching trajectory with thoughts...' });
-        let markdown: string;
+        progress.report({ message: 'Retrieving full trace with thoughts...' });
 
-        try {
-          const trajectory = await client.getCascadeTrajectory(selected.conversationId, 1);
-
-          if (mode === 'clean') {
-            markdown = formatTrajectoryClean(trajectory);
-          } else if (mode === 'detailed') {
-            markdown = formatTrajectoryAsMarkdown(trajectory, selected.conversationId);
-          } else {
-            progress.report({ message: 'Getting formatted conversation...' });
-            try {
-              const baseMarkdown = await client.convertTrajectoryToMarkdown(selected.conversationId);
-              markdown = injectThoughtsIntoMarkdown(baseMarkdown, trajectory);
-            } catch {
-              markdown = formatTrajectoryAsMarkdown(trajectory, selected.conversationId);
-            }
-          }
-        } catch (err: any) {
-          progress.report({ message: 'Falling back to standard copy...' });
-          try {
-            markdown = await client.convertTrajectoryToMarkdown(selected.conversationId);
-            vscode.window.showInformationMessage(
-              'Copied standard conversation (thought data was unavailable).'
-            );
-          } catch {
-            throw new Error(`Failed to retrieve conversation: ${err?.message}`);
-          }
-        }
+        const trajectory = await client.getCascadeTrajectory(selected.conversationId, 1);
+        const markdown = formatTrajectoryClean(trajectory);
 
         await vscode.env.clipboard.writeText(markdown);
 
-        const thoughtCount = countThoughts(markdown);
         const sizeStr = formatSize(markdown.length);
         vscode.window.showInformationMessage(
-          `Conversation copied to clipboard (${sizeStr}, ${thoughtCount} thought blocks)`
+          `Conversation copied to clipboard (${sizeStr})`
         );
       }
     );
@@ -181,10 +138,6 @@ function truncate(text: string, maxLen: number): string {
   return oneLine.substring(0, maxLen - 1) + '…';
 }
 
-function countThoughts(markdown: string): number {
-  return (markdown.match(/Thought Process/g) || []).length;
-}
-
 function handleError(err: any) {
   const msg = err?.message || String(err);
 
@@ -195,7 +148,7 @@ function handleError(err: any) {
     ).then(action => {
       if (action === 'Retry') {
         cachedLsInfo = null;
-        copyConversation('standard');
+        copyConversation();
       }
     });
   } else {

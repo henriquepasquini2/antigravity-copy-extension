@@ -1,342 +1,111 @@
 /**
- * Formats the full Antigravity conversation trajectory as markdown,
- * including the AI's thought process from each planner response.
+ * Formats the full Antigravity conversation trajectory as clean markdown.
+ * Captures every detail in chat order: user messages, thoughts, tool calls,
+ * tool results, assistant responses, web searches, images, commands, edits.
  *
- * Trajectory step types:
- *   CORTEX_STEP_TYPE_USER_INPUT        -> userInput
- *   CORTEX_STEP_TYPE_PLANNER_RESPONSE  -> plannerResponse (has .thinking, .thinkingDuration)
- *   CORTEX_STEP_TYPE_EPHEMERAL_MESSAGE -> ephemeralMessage (system prompts)
- *   CORTEX_STEP_TYPE_LIST_DIRECTORY    -> listDirectory
- *   CORTEX_STEP_TYPE_VIEW_FILE         -> viewFile
- *   CORTEX_STEP_TYPE_RUN_COMMAND       -> runCommand
- *   CORTEX_STEP_TYPE_COMMAND_STATUS    -> commandStatus
- *   CORTEX_STEP_TYPE_CODE_ACTION       -> codeAction
- *   CORTEX_STEP_TYPE_CHECKPOINT        -> checkpoint
+ * Field mappings (from raw trajectory inspection):
+ *   userInput.userResponse / userInput.items[].text
+ *   plannerResponse.thinking / .modifiedResponse / .response
+ *   listDirectory.directoryPathUri / .results[]{name, isDir}
+ *   viewFile.absolutePathUri / .endLine / .numLines
+ *   runCommand.commandLine / .cwd / .exitCode / .combinedOutput.full
+ *   commandStatus.combined / .delta / .exitCode / .status
+ *   codeAction.description / metadata.toolCall.argumentsJson.TargetFile
+ *   searchWeb.query / .summary
+ *   generateImage.prompt / .imageName / .generatedMedia.uri
+ *   grepSearch.query / .searchPathUri
+ *   notifyUser.notificationContent
+ *   error.userErrorMessage
  */
 
-export interface FormatOptions {
-  includeThoughts: boolean;
-  includeEphemeral: boolean;
-  includeMetadata: boolean;
-  collapsibleThoughts: boolean;
-}
-
-const defaultOptions: FormatOptions = {
-  includeThoughts: true,
-  includeEphemeral: false,
-  includeMetadata: false,
-  collapsibleThoughts: true,
-};
-
-export function formatTrajectoryAsMarkdown(
-  trajectoryResponse: any,
-  conversationId: string,
-  opts: Partial<FormatOptions> = {},
-): string {
-  const options = { ...defaultOptions, ...opts };
-  const lines: string[] = [];
-
-  lines.push(`# Antigravity Conversation`);
-  lines.push('');
-  lines.push(`**Conversation ID:** \`${conversationId}\``);
-  lines.push(`**Exported at:** ${new Date().toISOString()}`);
-  lines.push('');
-  lines.push('---');
-  lines.push('');
-
-  const steps = trajectoryResponse?.trajectory?.steps || [];
-  if (steps.length === 0) {
-    lines.push('*No steps found in this conversation.*');
-    return lines.join('\n');
-  }
-
-  let turnNumber = 0;
-
-  for (const step of steps) {
-    const type = step.type || '';
-
-    switch (type) {
-      case 'CORTEX_STEP_TYPE_USER_INPUT':
-        turnNumber++;
-        formatUserInput(step, turnNumber, lines);
-        break;
-
-      case 'CORTEX_STEP_TYPE_PLANNER_RESPONSE':
-        formatPlannerResponse(step, lines, options);
-        break;
-
-      case 'CORTEX_STEP_TYPE_EPHEMERAL_MESSAGE':
-        if (options.includeEphemeral) {
-          formatEphemeralMessage(step, lines);
-        }
-        break;
-
-      case 'CORTEX_STEP_TYPE_LIST_DIRECTORY':
-        formatListDirectory(step, lines);
-        break;
-
-      case 'CORTEX_STEP_TYPE_VIEW_FILE':
-        formatViewFile(step, lines);
-        break;
-
-      case 'CORTEX_STEP_TYPE_RUN_COMMAND':
-        formatRunCommand(step, lines);
-        break;
-
-      case 'CORTEX_STEP_TYPE_COMMAND_STATUS':
-        formatCommandStatus(step, lines);
-        break;
-
-      case 'CORTEX_STEP_TYPE_CODE_ACTION':
-        formatCodeAction(step, lines);
-        break;
-
-      case 'CORTEX_STEP_TYPE_CHECKPOINT':
-        break;
-
-      default:
-        if (options.includeMetadata) {
-          lines.push(`> *Step type: ${type}*`);
-          lines.push('');
-        }
+function uriToPath(uri: string): string {
+  if (!uri) return '';
+  try {
+    if (uri.startsWith('file:///')) {
+      return decodeURIComponent(uri.slice(8)).replace(/\//g, '\\');
     }
-  }
-
-  return lines.join('\n');
-}
-
-function formatUserInput(step: any, turnNumber: number, lines: string[]): void {
-  const input = step.userInput;
-  if (!input) return;
-
-  const text = input.userResponse || input.items?.map((i: any) => i.text).join('\n') || '';
-  if (!text) return;
-
-  lines.push(`## Turn ${turnNumber} — User`);
-  lines.push('');
-  lines.push(text);
-  lines.push('');
-}
-
-function formatPlannerResponse(step: any, lines: string[], options: FormatOptions): void {
-  const response = step.plannerResponse;
-  if (!response) return;
-
-  // Thought process
-  if (options.includeThoughts && response.thinking) {
-    const duration = response.thinkingDuration
-      ? ` (${parseDuration(response.thinkingDuration)})`
-      : '';
-
-    if (options.collapsibleThoughts) {
-      lines.push(`<details>`);
-      lines.push(`<summary><strong>Thought Process${duration}</strong></summary>`);
-      lines.push('');
-      lines.push(response.thinking);
-      lines.push('');
-      lines.push(`</details>`);
-    } else {
-      lines.push(`### Thought Process${duration}`);
-      lines.push('');
-      lines.push(response.thinking);
-    }
-    lines.push('');
-  }
-
-  // Main response text
-  if (response.text || response.content || response.markdown) {
-    lines.push('### Assistant Response');
-    lines.push('');
-    lines.push(response.text || response.content || response.markdown);
-    lines.push('');
-  }
-
-  // Tool calls within the planner response
-  if (response.toolCalls && response.toolCalls.length > 0) {
-    for (const tc of response.toolCalls) {
-      lines.push(`**Tool Call:** \`${tc.name || tc.toolName || 'unknown'}\``);
-      if (tc.arguments) {
-        lines.push('```json');
-        lines.push(typeof tc.arguments === 'string' ? tc.arguments : JSON.stringify(tc.arguments, null, 2));
-        lines.push('```');
-      }
-      lines.push('');
-    }
+    return uri;
+  } catch {
+    return uri;
   }
 }
 
-function formatEphemeralMessage(step: any, lines: string[]): void {
-  const msg = step.ephemeralMessage;
-  if (!msg?.content) return;
-
-  lines.push('<details>');
-  lines.push('<summary><em>System Message</em></summary>');
-  lines.push('');
-  lines.push(msg.content);
-  lines.push('');
-  lines.push('</details>');
-  lines.push('');
+function shortPath(fullPath: string): string {
+  if (!fullPath) return '';
+  const parts = fullPath.replace(/\//g, '\\').split('\\');
+  return parts.pop() || fullPath;
 }
 
-function formatListDirectory(step: any, lines: string[]): void {
-  const dir = step.listDirectory;
-  if (!dir) return;
-
-  const dirPath = dir.directoryPath || dir.directory_path || dir.path || '';
-  lines.push(`*Listed directory \`${dirPath}\`*`);
-
-  if (dir.entries && dir.entries.length > 0) {
-    const maxShow = 20;
-    const entries = dir.entries.slice(0, maxShow);
-    lines.push('');
-    lines.push('<details>');
-    lines.push(`<summary>Directory contents (${dir.entries.length} items)</summary>`);
-    lines.push('');
-    for (const entry of entries) {
-      const name = entry.name || entry.fileName || '';
-      const isDir = entry.isDirectory || entry.type === 'directory';
-      lines.push(`- ${isDir ? '📁' : '📄'} ${name}`);
-    }
-    if (dir.entries.length > maxShow) {
-      lines.push(`- ... and ${dir.entries.length - maxShow} more`);
-    }
-    lines.push('');
-    lines.push('</details>');
-  }
-  lines.push('');
+function parseToolArgs(json: string | undefined): Record<string, any> | null {
+  if (!json) return null;
+  try { return JSON.parse(json); } catch { return null; }
 }
 
-function formatViewFile(step: any, lines: string[]): void {
-  const vf = step.viewFile;
-  if (!vf) return;
-
-  const filePath = vf.filePath || vf.file_path || vf.path || '';
-  lines.push(`*Viewed file \`${filePath}\`*`);
-  lines.push('');
-}
-
-function formatRunCommand(step: any, lines: string[]): void {
-  const cmd = step.runCommand;
-  if (!cmd) return;
-
-  const command = cmd.command || cmd.input || '';
-  if (!command) return;
-
-  lines.push(`**Run Command:**`);
-  lines.push('```bash');
-  lines.push(command);
-  lines.push('```');
-  lines.push('');
-}
-
-function formatCommandStatus(step: any, lines: string[]): void {
-  const cs = step.commandStatus;
-  if (!cs) return;
-
-  if (cs.output) {
-    lines.push('<details>');
-    lines.push('<summary>Command Output</summary>');
-    lines.push('');
-    lines.push('```');
-    const output = cs.output.length > 5000
-      ? cs.output.substring(0, 5000) + '\n... (truncated)'
-      : cs.output;
-    lines.push(output);
-    lines.push('```');
-    lines.push('');
-    lines.push('</details>');
-    lines.push('');
-  }
-}
-
-function formatCodeAction(step: any, lines: string[]): void {
-  const ca = step.codeAction;
-  if (!ca) return;
-
-  const filePath = ca.filePath || ca.file_path || ca.uri || '';
-  const description = ca.description || ca.title || '';
-
-  lines.push(`**Code Edit:** \`${filePath}\``);
-  if (description) {
-    lines.push(`*${description}*`);
-  }
-
-  if (ca.unifiedDiff || ca.diff) {
-    const diff = ca.unifiedDiff || ca.diff;
-    const diffStr = typeof diff === 'string' ? diff : (diff.diff || JSON.stringify(diff, null, 2));
-    lines.push('');
-    lines.push('```diff');
-    const truncated = diffStr.length > 5000
-      ? diffStr.substring(0, 5000) + '\n... (truncated)'
-      : diffStr;
-    lines.push(truncated);
-    lines.push('```');
-  }
-  lines.push('');
-}
-
-/**
- * Clean trace format with minimal markup.
- * No generated metadata, no HTML, no truncation, no decorative markup.
- * Every step preserved, thoughts inline, role-annotated.
- */
 export function formatTrajectoryClean(trajectoryResponse: any): string {
   const steps = trajectoryResponse?.trajectory?.steps || [];
   if (steps.length === 0) return '';
 
   const lines: string[] = [];
+  let lastCommandOutput = '';
 
   for (const step of steps) {
-    const type = step.type || '';
+    const type: string = step.type || '';
 
     switch (type) {
-      case 'CORTEX_STEP_TYPE_USER_INPUT': {
-        const input = step.userInput;
-        if (!input) break;
-        const text = input.userResponse || input.items?.map((i: any) => i.text).join('\n') || '';
-        if (text.trim()) {
-          lines.push('## User');
-          lines.push('');
-          lines.push(text.trim());
-          lines.push('');
-        }
+      case 'CORTEX_STEP_TYPE_USER_INPUT':
         break;
-      }
 
-      case 'CORTEX_STEP_TYPE_PLANNER_RESPONSE': {
-        const pr = step.plannerResponse;
-        if (!pr) break;
-
-        if (pr.thinking) {
-          lines.push('## Thinking');
-          lines.push('');
-          lines.push(pr.thinking);
-          lines.push('');
-        }
-
-        const responseText = pr.text || pr.content || pr.markdown || '';
-        if (responseText) {
-          lines.push('## Assistant');
-          lines.push('');
-          lines.push(responseText);
-          lines.push('');
-        }
-
-        if (pr.toolCalls && pr.toolCalls.length > 0) {
-          for (const tc of pr.toolCalls) {
-            const name = tc.name || tc.toolName || 'unknown';
-            lines.push(`## Tool Call: ${name}`);
-            lines.push('');
-            if (tc.arguments) {
-              lines.push('```json');
-              lines.push(typeof tc.arguments === 'string' ? tc.arguments : JSON.stringify(tc.arguments, null, 2));
-              lines.push('```');
-            }
-            lines.push('');
-          }
-        }
+      case 'CORTEX_STEP_TYPE_PLANNER_RESPONSE':
+        emitPlannerResponse(step, lines);
         break;
-      }
+
+      case 'CORTEX_STEP_TYPE_SEARCH_WEB':
+        emitSearchWeb(step, lines);
+        break;
+
+      case 'CORTEX_STEP_TYPE_LIST_DIRECTORY':
+        emitListDirectory(step, lines);
+        break;
+
+      case 'CORTEX_STEP_TYPE_VIEW_FILE':
+        emitViewFile(step, lines);
+        break;
+
+      case 'CORTEX_STEP_TYPE_RUN_COMMAND':
+        lastCommandOutput = emitRunCommand(step, lines);
+        break;
+
+      case 'CORTEX_STEP_TYPE_COMMAND_STATUS':
+        emitCommandStatus(step, lines, lastCommandOutput);
+        break;
+
+      case 'CORTEX_STEP_TYPE_CODE_ACTION':
+        emitCodeAction(step, lines);
+        break;
+
+      case 'CORTEX_STEP_TYPE_GENERATE_IMAGE':
+        emitGenerateImage(step, lines);
+        break;
+
+      case 'CORTEX_STEP_TYPE_GREP_SEARCH':
+        emitGrepSearch(step, lines);
+        break;
+
+      case 'CORTEX_STEP_TYPE_NOTIFY_USER':
+        emitNotifyUser(step, lines);
+        break;
+
+      case 'CORTEX_STEP_TYPE_ERROR_MESSAGE':
+        emitErrorMessage(step, lines);
+        break;
+
+      case 'CORTEX_STEP_TYPE_BROWSER_SUBAGENT':
+        emitBrowserSubagent(step, lines);
+        break;
+
+      case 'CORTEX_STEP_TYPE_READ_RESOURCE':
+        emitReadResource(step, lines);
+        break;
 
       case 'CORTEX_STEP_TYPE_EPHEMERAL_MESSAGE': {
         const msg = step.ephemeralMessage;
@@ -349,94 +118,10 @@ export function formatTrajectoryClean(trajectoryResponse: any): string {
         break;
       }
 
-      case 'CORTEX_STEP_TYPE_LIST_DIRECTORY': {
-        const dir = step.listDirectory;
-        if (!dir) break;
-        const dirPath = dir.directoryPath || dir.directory_path || dir.path || '';
-        lines.push(`## Tool Result: list_dir`);
-        lines.push('');
-        lines.push(`Directory: ${dirPath}`);
-        if (dir.entries && dir.entries.length > 0) {
-          lines.push('');
-          for (const entry of dir.entries) {
-            const name = entry.name || entry.fileName || '';
-            const isDir = entry.isDirectory || entry.type === 'directory';
-            lines.push(`${isDir ? '[dir]' : '[file]'} ${name}`);
-          }
-        }
-        lines.push('');
-        break;
-      }
-
-      case 'CORTEX_STEP_TYPE_VIEW_FILE': {
-        const vf = step.viewFile;
-        if (!vf) break;
-        const filePath = vf.filePath || vf.file_path || vf.path || '';
-        lines.push(`## Tool Result: view_file`);
-        lines.push('');
-        lines.push(`File: ${filePath}`);
-        if (vf.content || vf.contents) {
-          lines.push('');
-          lines.push('```');
-          lines.push(vf.content || vf.contents);
-          lines.push('```');
-        }
-        lines.push('');
-        break;
-      }
-
-      case 'CORTEX_STEP_TYPE_RUN_COMMAND': {
-        const cmd = step.runCommand;
-        if (!cmd) break;
-        const command = cmd.command || cmd.input || '';
-        if (command) {
-          lines.push('## Tool Call: run_command');
-          lines.push('');
-          lines.push('```bash');
-          lines.push(command);
-          lines.push('```');
-          lines.push('');
-        }
-        break;
-      }
-
-      case 'CORTEX_STEP_TYPE_COMMAND_STATUS': {
-        const cs = step.commandStatus;
-        if (!cs) break;
-        if (cs.output) {
-          lines.push('## Tool Result: command_output');
-          lines.push('');
-          lines.push('```');
-          lines.push(cs.output);
-          lines.push('```');
-          lines.push('');
-        }
-        break;
-      }
-
-      case 'CORTEX_STEP_TYPE_CODE_ACTION': {
-        const ca = step.codeAction;
-        if (!ca) break;
-        const filePath = ca.filePath || ca.file_path || ca.uri || '';
-        lines.push(`## Tool Call: code_edit`);
-        lines.push('');
-        lines.push(`File: ${filePath}`);
-        if (ca.description || ca.title) {
-          lines.push(ca.description || ca.title);
-        }
-        if (ca.unifiedDiff || ca.diff) {
-          const diff = ca.unifiedDiff || ca.diff;
-          const diffStr = typeof diff === 'string' ? diff : (diff.diff || JSON.stringify(diff, null, 2));
-          lines.push('');
-          lines.push('```diff');
-          lines.push(diffStr);
-          lines.push('```');
-        }
-        lines.push('');
-        break;
-      }
-
       case 'CORTEX_STEP_TYPE_CHECKPOINT':
+      case 'CORTEX_STEP_TYPE_CONVERSATION_HISTORY':
+      case 'CORTEX_STEP_TYPE_TASK_BOUNDARY':
+      case 'CORTEX_STEP_TYPE_CODE_ACKNOWLEDGEMENT':
         break;
 
       default:
@@ -447,68 +132,213 @@ export function formatTrajectoryClean(trajectoryResponse: any): string {
   return lines.join('\n').replace(/\n{3,}/g, '\n\n').trim() + '\n';
 }
 
-function parseDuration(duration: string): string {
-  const match = duration.match(/^(\d+(?:\.\d+)?)s$/);
-  if (match) {
-    const seconds = parseFloat(match[1]);
-    if (seconds < 1) return `${Math.round(seconds * 1000)}ms`;
-    return `${seconds.toFixed(1)}s`;
-  }
-  return duration;
+function emitUserInput(step: any, lines: string[]): void {
+  const input = step.userInput;
+  if (!input) return;
+  const text = input.userResponse || input.items?.map((i: any) => i.text).join('\n') || '';
+  if (!text.trim()) return;
+
+  lines.push('## User');
+  lines.push('');
+  lines.push(text.trim());
+  lines.push('');
 }
 
 /**
- * Combine the standard ConvertTrajectoryToMarkdown output with
- * thought process data extracted from GetCascadeTrajectory.
+ * Planner responses contain thinking, text responses, and tool call declarations.
+ * We only emit thinking and text here — the actual tool results come from
+ * their dedicated step types (LIST_DIRECTORY, RUN_COMMAND, etc.) to avoid duplicates.
  */
-export function injectThoughtsIntoMarkdown(
-  baseMarkdown: string,
-  trajectoryResponse: any,
-): string {
-  if (!trajectoryResponse || !baseMarkdown) {
-    return baseMarkdown || '';
+function emitPlannerResponse(step: any, lines: string[]): void {
+  const pr = step.plannerResponse;
+  if (!pr) return;
+
+  if (pr.thinking) {
+    lines.push(pr.thinking);
+    lines.push('');
   }
 
-  const steps = trajectoryResponse?.trajectory?.steps || [];
-  const thoughts: { thinking: string; duration: string }[] = [];
+  const responseText = pr.modifiedResponse || pr.response || '';
+  if (responseText) {
+    lines.push(responseText);
+    lines.push('');
+  }
+}
 
-  for (const step of steps) {
-    const pr = step.plannerResponse;
-    if (pr?.thinking) {
-      thoughts.push({
-        thinking: pr.thinking,
-        duration: pr.thinkingDuration ? parseDuration(pr.thinkingDuration) : '',
-      });
+function emitSearchWeb(step: any, lines: string[]): void {
+  const sw = step.searchWeb;
+  if (!sw) return;
+
+  if (sw.query) {
+    lines.push(`Searched web: "${sw.query}"`);
+    lines.push('');
+  }
+
+  if (sw.summary) {
+    lines.push(sw.summary);
+    lines.push('');
+  }
+}
+
+function emitListDirectory(step: any, lines: string[]): void {
+  const dir = step.listDirectory;
+  if (!dir) return;
+
+  const dirPath = uriToPath(dir.directoryPathUri);
+  if (dirPath) lines.push(dirPath);
+
+  if (dir.results?.length) {
+    for (const entry of dir.results) {
+      if (entry.name) lines.push(entry.name);
     }
   }
+  lines.push('');
+}
 
-  if (thoughts.length === 0) {
-    return baseMarkdown;
+function emitViewFile(step: any, lines: string[]): void {
+  const vf = step.viewFile;
+  if (!vf) return;
+
+  const filePath = uriToPath(vf.absolutePathUri);
+  const name = shortPath(filePath);
+  const range = vf.endLine ? `#L1-${vf.endLine}` : '';
+  if (name) {
+    lines.push(`${name}${range}`);
+    lines.push('');
+  }
+}
+
+function emitRunCommand(step: any, lines: string[]): string {
+  const cmd = step.runCommand;
+  if (!cmd) return '';
+
+  const commandLine = cmd.commandLine || cmd.proposedCommandLine || '';
+  const cwd = cmd.cwd || '';
+
+  if (commandLine) {
+    const cwdShort = cwd ? `…${cwd.substring(cwd.lastIndexOf('\\'))} > ` : '';
+    lines.push(`Ran command`);
+    lines.push(`${cwdShort}${commandLine}`);
   }
 
-  const thoughtSections = thoughts.map((t, i) => {
-    const dur = t.duration ? ` (${t.duration})` : '';
-    return [
-      '<details>',
-      `<summary><strong>Thought Process ${i + 1}${dur}</strong></summary>`,
-      '',
-      t.thinking,
-      '',
-      '</details>',
-    ].join('\n');
-  }).join('\n\n');
+  const output = cmd.combinedOutput?.full || '';
+  if (output) lines.push(output);
 
-  return [
-    '# Full Conversation with Thoughts',
-    '',
-    '## Thought Processes',
-    '',
-    thoughtSections,
-    '',
-    '---',
-    '',
-    '## Conversation',
-    '',
-    baseMarkdown,
-  ].join('\n');
+  if (cmd.exitCode !== undefined && cmd.exitCode !== null) {
+    lines.push(`Exit code ${cmd.exitCode}`);
+  }
+  lines.push('');
+  return output;
+}
+
+function emitCommandStatus(step: any, lines: string[], lastCmdOutput: string): void {
+  const cs = step.commandStatus;
+  if (!cs) return;
+
+  const output = cs.combined || cs.delta || '';
+  if (output && output !== lastCmdOutput) {
+    lines.push(output);
+    if (cs.exitCode !== undefined && cs.exitCode !== null) {
+      lines.push(`Exit code ${cs.exitCode}`);
+    }
+    lines.push('');
+  }
+}
+
+function emitCodeAction(step: any, lines: string[]): void {
+  const ca = step.codeAction;
+  if (!ca) return;
+
+  const toolCall = step.metadata?.toolCall;
+  const toolName = toolCall?.name || '';
+  const args = parseToolArgs(toolCall?.argumentsJson);
+
+  let filePath = '';
+  if (args?.TargetFile) {
+    filePath = args.TargetFile;
+  } else if (ca.actionSpec?.createFile?.path?.absoluteUri) {
+    filePath = uriToPath(ca.actionSpec.createFile.path.absoluteUri);
+  } else if (ca.actionSpec?.editFile?.path?.absoluteUri) {
+    filePath = uriToPath(ca.actionSpec.editFile.path.absoluteUri);
+  } else if (args?.FilePath || args?.AbsolutePath) {
+    filePath = args.FilePath || args.AbsolutePath;
+  }
+
+  const name = shortPath(filePath);
+  const status = step.status === 'CORTEX_STEP_STATUS_ERROR' ? ' (failed)' : '';
+
+  if (toolName === 'write_to_file') {
+    lines.push(`Wrote ${name}${status}`);
+  } else {
+    lines.push(`Edited ${name}${status}`);
+  }
+
+  if (ca.description) {
+    lines.push(ca.description);
+  }
+  lines.push('');
+}
+
+function emitGenerateImage(step: any, lines: string[]): void {
+  const gi = step.generateImage;
+  if (!gi) return;
+
+  if (gi.prompt) {
+    lines.push('Prompt');
+    lines.push(gi.prompt);
+  }
+
+  if (gi.generatedMedia?.uri) {
+    const imgPath = uriToPath(gi.generatedMedia.uri);
+    if (imgPath) lines.push(`Image: ${imgPath}`);
+  }
+  lines.push('');
+}
+
+function emitGrepSearch(step: any, lines: string[]): void {
+  const gs = step.grepSearch;
+  if (!gs) return;
+
+  const searchPath = uriToPath(gs.searchPathUri);
+  lines.push(`Searched for "${gs.query}" in ${searchPath}`);
+  lines.push('');
+}
+
+function emitNotifyUser(step: any, lines: string[]): void {
+  const nu = step.notifyUser;
+  if (!nu) return;
+
+  if (nu.notificationContent) {
+    lines.push(nu.notificationContent);
+    lines.push('');
+  }
+}
+
+function emitErrorMessage(step: any, lines: string[]): void {
+  const err = step.errorMessage || step.error;
+  if (!err) return;
+
+  const msg = err.userErrorMessage || err.shortError || err.fullError || '';
+  if (msg) {
+    lines.push(`Error: ${msg}`);
+    lines.push('');
+  }
+}
+
+function emitBrowserSubagent(step: any, lines: string[]): void {
+  const args = parseToolArgs(step.metadata?.toolCall?.argumentsJson);
+  if (args?.Instruction || args?.instruction) {
+    lines.push(`Browser: ${args.Instruction || args.instruction}`);
+    lines.push('');
+  }
+}
+
+function emitReadResource(step: any, lines: string[]): void {
+  const rr = step.readResource;
+  if (!rr) return;
+
+  if (rr.uri) {
+    lines.push(`Read resource: ${rr.uri}`);
+    lines.push('');
+  }
 }
