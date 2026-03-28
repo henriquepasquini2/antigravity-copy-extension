@@ -9,7 +9,11 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(
     vscode.commands.registerCommand(
       'antigravity-copy-full.copyConversation',
-      () => copyConversation(),
+      () => copyConversation(false),
+    ),
+    vscode.commands.registerCommand(
+      'antigravity-copy-full.copyConversationWithPrompts',
+      () => copyConversation(true),
     ),
   );
 }
@@ -18,7 +22,7 @@ export function deactivate() {
   cachedLsInfo = null;
 }
 
-async function copyConversation() {
+async function copyConversation(includePrompts: boolean) {
   try {
     const lsInfo = await discoverWithProgress();
     if (!lsInfo) return;
@@ -39,9 +43,13 @@ async function copyConversation() {
       return;
     }
 
+    const title = includePrompts
+      ? 'Antigravity: Copy Full Conversation with Prompts'
+      : 'Antigravity: Copy Full Conversation';
+
     const selected = await vscode.window.showQuickPick(items, {
       placeHolder: 'Select a conversation to copy',
-      title: 'Antigravity: Copy Full Conversation',
+      title,
       matchOnDescription: true,
       matchOnDetail: true,
     });
@@ -58,7 +66,7 @@ async function copyConversation() {
         progress.report({ message: 'Retrieving full trace with thoughts...' });
 
         const trajectory = await client.getCascadeTrajectory(selected.conversationId, 1);
-        const markdown = formatTrajectoryClean(trajectory);
+        const markdown = formatTrajectoryClean(trajectory, includePrompts);
 
         await vscode.env.clipboard.writeText(markdown);
 
@@ -148,7 +156,7 @@ function handleError(err: any) {
     ).then(action => {
       if (action === 'Retry') {
         cachedLsInfo = null;
-        copyConversation();
+        copyConversation(false);
       }
     });
   } else {

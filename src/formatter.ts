@@ -1,7 +1,7 @@
 /**
  * Formats the full Antigravity conversation trajectory as clean markdown.
  * Captures every detail in chat order: thoughts, tool results, assistant
- * responses, web searches, images, commands, edits. User input is omitted.
+ * responses, web searches, images, commands, edits.
  *
  * Field mappings (from raw trajectory inspection):
  *   userInput.userResponse / userInput.items[].text
@@ -41,7 +41,10 @@ function parseToolArgs(json: string | undefined): Record<string, any> | null {
   try { return JSON.parse(json); } catch { return null; }
 }
 
-export function formatTrajectoryClean(trajectoryResponse: any): string {
+export function formatTrajectoryClean(
+  trajectoryResponse: any,
+  includeUserInput = false,
+): string {
   const steps = trajectoryResponse?.trajectory?.steps || [];
   if (steps.length === 0) return '';
 
@@ -53,6 +56,7 @@ export function formatTrajectoryClean(trajectoryResponse: any): string {
 
     switch (type) {
       case 'CORTEX_STEP_TYPE_USER_INPUT':
+        if (includeUserInput) emitUserInput(step, lines);
         break;
 
       case 'CORTEX_STEP_TYPE_PLANNER_RESPONSE':
@@ -122,6 +126,18 @@ export function formatTrajectoryClean(trajectoryResponse: any): string {
   }
 
   return lines.join('\n').replace(/\n{3,}/g, '\n\n').trim() + '\n';
+}
+
+function emitUserInput(step: any, lines: string[]): void {
+  const input = step.userInput;
+  if (!input) return;
+  const text = input.userResponse || input.items?.map((i: any) => i.text).join('\n') || '';
+  if (!text.trim()) return;
+
+  lines.push('## User');
+  lines.push('');
+  lines.push(text.trim());
+  lines.push('');
 }
 
 /**
