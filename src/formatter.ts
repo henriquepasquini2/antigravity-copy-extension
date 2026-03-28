@@ -1,7 +1,7 @@
 /**
  * Formats the full Antigravity conversation trajectory as clean markdown.
- * Captures every detail in chat order: user messages, thoughts, tool calls,
- * tool results, assistant responses, web searches, images, commands, edits.
+ * Captures every detail in chat order: thoughts, tool results, assistant
+ * responses, web searches, images, commands, edits. User input is omitted.
  *
  * Field mappings (from raw trajectory inspection):
  *   userInput.userResponse / userInput.items[].text
@@ -130,18 +130,6 @@ export function formatTrajectoryClean(trajectoryResponse: any): string {
   }
 
   return lines.join('\n').replace(/\n{3,}/g, '\n\n').trim() + '\n';
-}
-
-function emitUserInput(step: any, lines: string[]): void {
-  const input = step.userInput;
-  if (!input) return;
-  const text = input.userResponse || input.items?.map((i: any) => i.text).join('\n') || '';
-  if (!text.trim()) return;
-
-  lines.push('## User');
-  lines.push('');
-  lines.push(text.trim());
-  lines.push('');
 }
 
 /**
