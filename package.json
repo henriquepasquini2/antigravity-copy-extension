@@ -1,0 +1,79 @@
+{
+  "name": "antigravity-copy-full",
+  "displayName": "Antigravity Copy Full Conversation",
+  "description": "Copy Antigravity chat conversations including the full thought process and reasoning to clipboard as Markdown",
+  "version": "0.1.0",
+  "publisher": "henriquepasquini2",
+  "license": "MIT",
+  "icon": "images/icon.png",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/henriquepasquini2/antigravity-copy-extension"
+  },
+  "bugs": {
+    "url": "https://github.com/henriquepasquini2/antigravity-copy-extension/issues"
+  },
+  "homepage": "https://github.com/henriquepasquini2/antigravity-copy-extension#readme",
+  "engines": {
+    "vscode": "^1.107.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "keywords": [
+    "antigravity",
+    "google",
+    "chat",
+    "conversation",
+    "thoughts",
+    "reasoning",
+    "copy",
+    "export",
+    "markdown"
+  ],
+  "activationEvents": [
+    "onCommand:antigravity-copy-full.copyConversation",
+    "onCommand:antigravity-copy-full.copyConversationFull"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "antigravity-copy-full.copyConversation",
+        "title": "Copy Conversation with Thoughts",
+        "category": "Antigravity"
+      },
+      {
+        "command": "antigravity-copy-full.copyConversationFull",
+        "title": "Copy Full Conversation Trace (Detailed)",
+        "category": "Antigravity"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "antigravity-copy-full.copyConversation",
+        "key": "ctrl+shift+alt+c",
+        "mac": "cmd+shift+alt+c"
+      },
+      {
+        "command": "antigravity-copy-full.copyConversationFull",
+        "key": "ctrl+shift+alt+t",
+        "mac": "cmd+shift+alt+t"
+      }
+    ]
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "package": "vsce package --allow-missing-repository",
+    "publish:ovsx": "ovsx publish"
+  },
+  "devDependencies": {
+    "@types/node": "^25.5.0",
+    "@types/vscode": "^1.107.0",
+    "@vscode/vsce": "^3.7.1",
+    "ovsx": "^0.10.1",
+    "typescript": "^6.0.2"
+  }
+}
