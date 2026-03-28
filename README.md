@@ -16,6 +16,7 @@ This extension connects directly to the running Antigravity language server and 
 - **Complete tool trace** — Web searches (with full results), directory listings, file views, command executions with output, code edits, image generation prompts, grep searches, browser actions, and more
 - **All 18+ step types** — `SEARCH_WEB`, `RUN_COMMAND`, `COMMAND_STATUS`, `LIST_DIRECTORY`, `VIEW_FILE`, `CODE_ACTION`, `GENERATE_IMAGE`, `GREP_SEARCH`, `BROWSER_SUBAGENT`, `NOTIFY_USER`, `ERROR_MESSAGE`, `READ_RESOURCE`, and others
 - **Full assistant responses** — The actual AI text response, not just tool call summaries
+- **Two copy modes** — Response-only (default) or with user prompts included
 - **Conversation picker** — Select from all active conversations with titles, sorted by recency
 - **Zero configuration** — Automatically discovers the language server, ports, and auth tokens
 
@@ -23,15 +24,18 @@ This extension connects directly to the running Antigravity language server and 
 
 1. Make sure **Antigravity is running** with at least one chat conversation
 2. Open the Command Palette (`Ctrl+Shift+P`)
-3. Run **Antigravity: Copy Full Conversation**
+3. Run one of:
+   - **Antigravity: Copy Full Conversation** — AI response only (thoughts, tools, output)
+   - **Antigravity: Copy Full Conversation with Prompts** — Same, but also includes user messages
 4. Pick the conversation from the list
 5. Done — the full Markdown is on your clipboard
 
-### Keyboard Shortcut
+### Keyboard Shortcuts
 
-| Shortcut              | Command                     |
-|-----------------------|-----------------------------|
-| `Ctrl+Shift+Alt+C`   | Copy Full Conversation      |
+| Shortcut              | Command                                |
+|-----------------------|----------------------------------------|
+| `Ctrl+Shift+Alt+C`   | Copy Full Conversation                 |
+| `Ctrl+Shift+Alt+P`   | Copy Full Conversation with Prompts    |
 
 On macOS, replace `Ctrl` with `Cmd`.
 
@@ -65,6 +69,18 @@ Implement the landing page with Hero, IDMO, and Stats sections.
 
 I've completely redesigned the home page, creating a premium
 landing page that showcases the IDMO platform and Cell Shuttle...
+```
+
+With the **"with Prompts"** mode, user messages appear as well:
+
+```markdown
+## User
+
+Build a landing page for Cellares showcasing IDMO and Cell Shuttle.
+
+**Crafting the Landing Page**
+
+I'm currently focused on the hero section...
 ```
 
 ## Requirements
