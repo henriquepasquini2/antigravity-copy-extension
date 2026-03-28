@@ -107,16 +107,8 @@ export function formatTrajectoryClean(trajectoryResponse: any): string {
         emitReadResource(step, lines);
         break;
 
-      case 'CORTEX_STEP_TYPE_EPHEMERAL_MESSAGE': {
-        const msg = step.ephemeralMessage;
-        if (msg?.content) {
-          lines.push('## System');
-          lines.push('');
-          lines.push(msg.content);
-          lines.push('');
-        }
+      case 'CORTEX_STEP_TYPE_EPHEMERAL_MESSAGE':
         break;
-      }
 
       case 'CORTEX_STEP_TYPE_CHECKPOINT':
       case 'CORTEX_STEP_TYPE_CONVERSATION_HISTORY':
