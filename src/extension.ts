@@ -1,4 +1,6 @@
 import * as vscode from 'vscode';
+import * as fs from 'fs';
+import * as path from 'path';
 import { discoverLanguageServer, LanguageServerInfo } from './discovery';
 import { AntigravityLsClient, CascadeSummary } from './lsClient';
 import { formatTrajectoryClean } from './formatter';
@@ -14,6 +16,10 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.commands.registerCommand(
       'antigravity-copy-full.copyConversationWithPrompts',
       () => copyConversation(true),
+    ),
+    vscode.commands.registerCommand(
+      'antigravity-copy-full.dumpTrajectory',
+      () => dumpTrajectory(),
     ),
   );
 }
@@ -78,6 +84,77 @@ async function copyConversation(includePrompts: boolean) {
     );
   } catch (err: any) {
     handleError(err, includePrompts);
+  }
+}
+
+async function dumpTrajectory() {
+  try {
+    const lsInfo = await discoverWithProgress();
+    if (!lsInfo) return;
+
+    const client = new AntigravityLsClient(lsInfo);
+
+    const items = await vscode.window.withProgress(
+      {
+        location: vscode.ProgressLocation.Notification,
+        title: 'Loading conversations...',
+        cancellable: false,
+      },
+      async () => buildConversationItems(client),
+    );
+
+    if (items.length === 0) {
+      vscode.window.showWarningMessage('No Antigravity conversations found.');
+      return;
+    }
+
+    const selected = await vscode.window.showQuickPick(items, {
+      placeHolder: 'Select a conversation to dump',
+      title: 'Antigravity: Dump Raw Trajectory (Debug)',
+      matchOnDescription: true,
+      matchOnDetail: true,
+    });
+
+    if (!selected) return;
+
+    await vscode.window.withProgress(
+      {
+        location: vscode.ProgressLocation.Notification,
+        title: 'Dumping trajectory...',
+        cancellable: false,
+      },
+      async () => {
+        const trajectory = await client.getCascadeTrajectory(selected.conversationId, 1);
+        const json = JSON.stringify(trajectory, null, 2);
+
+        const defaultName = `trajectory-${selected.conversationId.substring(0, 8)}.json`;
+        const saveUri = await vscode.window.showSaveDialog({
+          defaultUri: vscode.Uri.file(
+            path.join(
+              vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || require('os').homedir(),
+              defaultName
+            )
+          ),
+          filters: { 'JSON': ['json'] },
+        });
+
+        if (!saveUri) return;
+
+        fs.writeFileSync(saveUri.fsPath, json, 'utf-8');
+
+        const sizeKb = (json.length / 1024).toFixed(1);
+        const action = await vscode.window.showInformationMessage(
+          `Trajectory dumped (${sizeKb} KB): ${saveUri.fsPath}`,
+          'Open File'
+        );
+        if (action === 'Open File') {
+          const doc = await vscode.workspace.openTextDocument(saveUri);
+          await vscode.window.showTextDocument(doc);
+        }
+      }
+    );
+  } catch (err: any) {
+    vscode.window.showErrorMessage(`Antigravity Dump: ${err?.message || String(err)}`);
   }
 }
 

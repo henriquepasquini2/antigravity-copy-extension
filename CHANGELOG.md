@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.3.0] - 2026-03-28
+
+### Added
+- **Dump Raw Trajectory (Debug)** command (`Ctrl+Shift+P` → "Antigravity: Dump Raw Trajectory") — exports the full raw trajectory JSON for a selected conversation to a file. Useful for debugging formatting issues across different Antigravity versions.
+
 ## [1.2.0] - 2026-03-28
 
 ### Fixed

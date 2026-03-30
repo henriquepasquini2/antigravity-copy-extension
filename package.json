@@ -2,7 +2,7 @@
   "name": "antigravity-copy-full",
   "displayName": "Antigravity Copy Full Conversation",
   "description": "Copy Antigravity chat conversations including the full thought process and reasoning to clipboard as Markdown",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "publisher": "henriquepasquini2",
   "license": "MIT",
   "icon": "images/icon.png",
@@ -33,7 +33,8 @@
   ],
   "activationEvents": [
     "onCommand:antigravity-copy-full.copyConversation",
-    "onCommand:antigravity-copy-full.copyConversationWithPrompts"
+    "onCommand:antigravity-copy-full.copyConversationWithPrompts",
+    "onCommand:antigravity-copy-full.dumpTrajectory"
   ],
   "main": "./out/extension.js",
   "contributes": {
@@ -46,6 +47,11 @@
       {
         "command": "antigravity-copy-full.copyConversationWithPrompts",
         "title": "Copy Full Conversation with Prompts",
+        "category": "Antigravity"
+      },
+      {
+        "command": "antigravity-copy-full.dumpTrajectory",
+        "title": "Dump Raw Trajectory (Debug)",
         "category": "Antigravity"
       }
     ],
