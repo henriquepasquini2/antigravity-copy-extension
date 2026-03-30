@@ -77,7 +77,7 @@ async function copyConversation(includePrompts: boolean) {
       }
     );
   } catch (err: any) {
-    handleError(err);
+    handleError(err, includePrompts);
   }
 }
 
@@ -91,7 +91,8 @@ async function discoverWithProgress(): Promise<LanguageServerInfo | null> {
       cancellable: false,
     },
     async () => {
-      const info = await discoverLanguageServer();
+      const workspacePath = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+      const info = await discoverLanguageServer(workspacePath);
       cachedLsInfo = info;
       return info;
     }
@@ -146,7 +147,9 @@ function truncate(text: string, maxLen: number): string {
   return oneLine.substring(0, maxLen - 1) + '…';
 }
 
-function handleError(err: any) {
+let retrying = false;
+
+function handleError(err: any, includePrompts: boolean) {
   const msg = err?.message || String(err);
 
   if (msg.includes('Could not find')) {
@@ -156,10 +159,18 @@ function handleError(err: any) {
     ).then(action => {
       if (action === 'Retry') {
         cachedLsInfo = null;
-        copyConversation(false);
+        copyConversation(includePrompts);
       }
     });
+  } else if (msg.includes('returned 403') && !retrying) {
+    retrying = true;
+    cachedLsInfo = null;
+    vscode.window.showInformationMessage(
+      'Antigravity Copy: CSRF mismatch — rediscovering language server...'
+    );
+    copyConversation(includePrompts).finally(() => { retrying = false; });
   } else {
+    retrying = false;
     vscode.window.showErrorMessage(`Antigravity Copy: ${msg}`);
   }
 }

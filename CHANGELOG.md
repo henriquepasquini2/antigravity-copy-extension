@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.2.0] - 2026-03-28
+
+### Fixed
+- **403 CSRF mismatch** when multiple Antigravity windows are open. Discovery now finds all language server processes and matches the correct one by workspace path.
+- Automatic retry on 403: clears the cached server info and rediscovers the correct language server.
+
+### Changed
+- Discovery now encodes the current workspace folder path and compares it against each language server's `--workspace_id` argument to pick the right process.
+- If workspace matching fails, falls back to trying each process sequentially.
+
 ## [1.1.1] - 2026-03-28
 
 ### Fixed

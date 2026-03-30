@@ -17,23 +17,43 @@ export interface LanguageServerInfo {
 /**
  * Discovers the running Antigravity language server by inspecting process
  * command lines. Extracts the CSRF token and finds the listening ports.
+ *
+ * When multiple language servers are running (multiple Antigravity windows),
+ * pass workspaceFolderPath so we can match the correct one via --workspace_id.
  */
-export async function discoverLanguageServer(): Promise<LanguageServerInfo> {
-  const lsProcess = await findLanguageServerProcess();
+export async function discoverLanguageServer(workspaceFolderPath?: string): Promise<LanguageServerInfo> {
+  const allProcesses = await findAllLanguageServerProcesses();
+  const certPath = findCertPath();
 
-  const csrfToken = extractArg(lsProcess.commandLine, '--csrf_token');
-  const workspaceId = extractArg(lsProcess.commandLine, '--workspace_id');
+  const ranked = rankProcessesByWorkspace(allProcesses, workspaceFolderPath);
+
+  let lastError: Error | undefined;
+  for (const proc of ranked) {
+    try {
+      return await buildLsInfo(proc, certPath);
+    } catch (err: any) {
+      lastError = err;
+    }
+  }
+
+  throw lastError ?? new Error(
+    'Could not find the Antigravity language server process. ' +
+    'Make sure Antigravity is running with an active chat session.'
+  );
+}
+
+async function buildLsInfo(proc: ProcessInfo, certPath: string): Promise<LanguageServerInfo> {
+  const csrfToken = extractArg(proc.commandLine, '--csrf_token');
+  const workspaceId = extractArg(proc.commandLine, '--workspace_id');
 
   if (!csrfToken) {
     throw new Error('Could not extract CSRF token from language server process');
   }
 
-  const ports = await findListeningPorts(lsProcess.pid);
+  const ports = await findListeningPorts(proc.pid);
   if (ports.length < 2) {
     throw new Error(`Expected at least 2 listening ports, found ${ports.length}`);
   }
-
-  const certPath = findCertPath();
 
   const httpsPort = await probeForHttpsPort(ports, certPath);
   const nonHttps = ports.filter(p => p !== httpsPort);
@@ -46,7 +66,7 @@ export async function discoverLanguageServer(): Promise<LanguageServerInfo> {
     httpsPort,
     httpPort,
     lspPort,
-    pid: lsProcess.pid,
+    pid: proc.pid,
     workspaceId: workspaceId || '',
     certPath,
   };
@@ -57,7 +77,7 @@ interface ProcessInfo {
   commandLine: string;
 }
 
-async function findLanguageServerProcess(): Promise<ProcessInfo> {
+async function findAllLanguageServerProcesses(): Promise<ProcessInfo[]> {
   return new Promise((resolve, reject) => {
     const isWindows = os.platform() === 'win32';
 
@@ -71,6 +91,7 @@ async function findLanguageServerProcess(): Promise<ProcessInfo> {
           return;
         }
 
+        const results: ProcessInfo[] = [];
         try {
           let processes = JSON.parse(stdout.trim());
           if (!Array.isArray(processes)) processes = [processes];
@@ -79,18 +100,21 @@ async function findLanguageServerProcess(): Promise<ProcessInfo> {
             const cmdLine = proc.CommandLine || '';
             const pid = proc.ProcessId;
             if (cmdLine.includes('--csrf_token') && typeof pid === 'number') {
-              resolve({ pid, commandLine: cmdLine });
-              return;
+              results.push({ pid, commandLine: cmdLine });
             }
           }
         } catch {
           // JSON parse failed — no matching processes
         }
 
-        reject(new Error(
-          'Could not find the Antigravity language server process. ' +
-          'Make sure Antigravity is running with an active chat session.'
-        ));
+        if (results.length === 0) {
+          reject(new Error(
+            'Could not find the Antigravity language server process. ' +
+            'Make sure Antigravity is running with an active chat session.'
+          ));
+        } else {
+          resolve(results);
+        }
       });
     } else {
       cp.exec('ps aux', { maxBuffer: 1024 * 1024 * 10 }, (err, stdout) => {
@@ -99,22 +123,52 @@ async function findLanguageServerProcess(): Promise<ProcessInfo> {
           return;
         }
 
+        const results: ProcessInfo[] = [];
         for (const line of stdout.split('\n')) {
           if (line.includes('language_server') && line.includes('--csrf_token') && !line.includes('grep')) {
             const parts = line.trim().split(/\s+/);
             const pid = parseInt(parts[1], 10);
-            resolve({ pid, commandLine: line });
-            return;
+            results.push({ pid, commandLine: line });
           }
         }
 
-        reject(new Error(
-          'Could not find the Antigravity language server process. ' +
-          'Make sure Antigravity is running with an active chat session.'
-        ));
+        if (results.length === 0) {
+          reject(new Error(
+            'Could not find the Antigravity language server process. ' +
+            'Make sure Antigravity is running with an active chat session.'
+          ));
+        } else {
+          resolve(results);
+        }
       });
     }
   });
+}
+
+/**
+ * Sorts processes so the one matching the current workspace comes first.
+ * workspace_id encodes the path by replacing : → _3A, / and - → _.
+ * We encode our workspace path the same way for a reliable comparison.
+ */
+function rankProcessesByWorkspace(processes: ProcessInfo[], workspacePath?: string): ProcessInfo[] {
+  if (!workspacePath || processes.length <= 1) return processes;
+
+  const encoded = encodeAsWorkspaceId(workspacePath);
+
+  return [...processes].sort((a, b) => {
+    const aWsId = (extractArg(a.commandLine, '--workspace_id') || '').toLowerCase();
+    const bWsId = (extractArg(b.commandLine, '--workspace_id') || '').toLowerCase();
+    const aMatch = aWsId === encoded ? 0 : 1;
+    const bMatch = bWsId === encoded ? 0 : 1;
+    return aMatch - bMatch;
+  });
+}
+
+function encodeAsWorkspaceId(folderPath: string): string {
+  let p = folderPath.replace(/\\/g, '/').replace(/\/$/, '').replace(/^\//, '');
+  p = p.replace(/:/g, '_3A');
+  p = p.replace(/[/\-]/g, '_');
+  return ('file_' + p).toLowerCase();
 }
 
 function extractArg(commandLine: string, argName: string): string | undefined {
