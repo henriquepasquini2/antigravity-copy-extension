@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.1.1] - 2026-03-28
+
+### Fixed
+- Fixed SSL `WRONG_VERSION_NUMBER` error on some systems where the HTTPS port wasn't the lowest-numbered port. Discovery now probes each candidate port with a TLS handshake instead of guessing by port number order.
+
 ## [1.1.0] - 2026-03-28
 
 ### Added

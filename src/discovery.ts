@@ -1,4 +1,5 @@
 import * as cp from 'child_process';
+import * as tls from 'tls';
 import * as os from 'os';
 import * as path from 'path';
 import * as fs from 'fs';
@@ -32,13 +33,13 @@ export async function discoverLanguageServer(): Promise<LanguageServerInfo> {
     throw new Error(`Expected at least 2 listening ports, found ${ports.length}`);
   }
 
-  // The LS typically binds ports sequentially:
-  // smallest = httpsPort, next = httpPort, largest = lspPort
-  ports.sort((a, b) => a - b);
-  const [httpsPort, httpPort, ...rest] = ports;
-  const lspPort = rest.length > 0 ? rest[rest.length - 1] : httpPort + 1;
-
   const certPath = findCertPath();
+
+  const httpsPort = await probeForHttpsPort(ports, certPath);
+  const nonHttps = ports.filter(p => p !== httpsPort);
+  nonHttps.sort((a, b) => a - b);
+  const httpPort = nonHttps[0] ?? httpsPort + 1;
+  const lspPort = nonHttps.length > 1 ? nonHttps[nonHttps.length - 1] : httpPort + 1;
 
   return {
     csrfToken,
@@ -153,6 +154,36 @@ async function findListeningPorts(pid: number): Promise<number[]> {
       resolve([...new Set(ports)]);
     });
   });
+}
+
+/**
+ * Probes each candidate port with a TLS handshake to find the HTTPS port.
+ * Falls back to smallest-port heuristic if no probe succeeds.
+ */
+async function probeForHttpsPort(ports: number[], certPath: string): Promise<number> {
+  const ca = fs.existsSync(certPath) ? fs.readFileSync(certPath) : undefined;
+
+  const probe = (port: number): Promise<boolean> =>
+    new Promise(resolve => {
+      const socket = tls.connect(
+        { host: '127.0.0.1', port, ca, rejectUnauthorized: false, timeout: 2000 },
+        () => { socket.destroy(); resolve(true); }
+      );
+      socket.on('error', () => { socket.destroy(); resolve(false); });
+      socket.on('timeout', () => { socket.destroy(); resolve(false); });
+    });
+
+  const results = await Promise.all(ports.map(async p => ({ port: p, ok: await probe(p) })));
+  const tlsPorts = results.filter(r => r.ok).map(r => r.port);
+
+  if (tlsPorts.length > 0) {
+    tlsPorts.sort((a, b) => a - b);
+    return tlsPorts[0];
+  }
+
+  // Fallback: assume smallest port is HTTPS (original heuristic)
+  const sorted = [...ports].sort((a, b) => a - b);
+  return sorted[0];
 }
 
 function findCertPath(): string {
