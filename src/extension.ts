@@ -225,6 +225,20 @@ function truncate(text: string, maxLen: number): string {
 }
 
 let retrying = false;
+const outputChannel = vscode.window.createOutputChannel('Antigravity Copy');
+
+function logDiagnostics(context: string) {
+  if (!cachedLsInfo) {
+    outputChannel.appendLine(`[${context}] No cached LS info`);
+    return;
+  }
+  const info = cachedLsInfo;
+  outputChannel.appendLine(`[${context}] PID: ${info.pid}`);
+  outputChannel.appendLine(`[${context}] HTTPS port: ${info.httpsPort}`);
+  outputChannel.appendLine(`[${context}] CSRF token: ${info.csrfToken.substring(0, 8)}…`);
+  outputChannel.appendLine(`[${context}] Workspace ID: ${info.workspaceId}`);
+  outputChannel.appendLine(`[${context}] Cert path: ${info.certPath}`);
+}
 
 function handleError(err: any, includePrompts: boolean) {
   const msg = err?.message || String(err);
@@ -240,14 +254,26 @@ function handleError(err: any, includePrompts: boolean) {
       }
     });
   } else if (msg.includes('returned 403') && !retrying) {
+    outputChannel.appendLine(`\n=== 403 Error at ${new Date().toISOString()} ===`);
+    logDiagnostics('before-retry');
+    outputChannel.show(true);
+
     retrying = true;
     cachedLsInfo = null;
     vscode.window.showInformationMessage(
       'Antigravity Copy: CSRF mismatch — rediscovering language server...'
     );
-    copyConversation(includePrompts).finally(() => { retrying = false; });
+    copyConversation(includePrompts).finally(() => {
+      logDiagnostics('after-retry');
+      retrying = false;
+    });
   } else {
     retrying = false;
+    if (msg.includes('403')) {
+      outputChannel.appendLine(`\n=== Persistent 403 at ${new Date().toISOString()} ===`);
+      logDiagnostics('persistent-403');
+      outputChannel.show(true);
+    }
     vscode.window.showErrorMessage(`Antigravity Copy: ${msg}`);
   }
 }

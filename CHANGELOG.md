@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.3.1] - 2026-03-28
+
+### Fixed
+- Fixed netstat PID matching on Windows using exact column comparison instead of substring search, which could match ports from unrelated processes and cause 403 or SSL errors.
+- On 403, the extension now logs full discovery diagnostics (PID, port, CSRF token prefix, workspace ID) to the "Antigravity Copy" Output panel to help debug persistent issues.
+
 ## [1.3.0] - 2026-03-28
 
 ### Added

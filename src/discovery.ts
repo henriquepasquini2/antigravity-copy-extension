@@ -181,7 +181,7 @@ async function findListeningPorts(pid: number): Promise<number[]> {
   return new Promise((resolve, reject) => {
     const isWindows = os.platform() === 'win32';
     const cmd = isWindows
-      ? `netstat -ano | findstr "LISTENING" | findstr "${pid}"`
+      ? `netstat -ano | findstr "LISTENING"`
       : `lsof -iTCP -sTCP:LISTEN -nP -p ${pid}`;
 
     cp.exec(cmd, (err, stdout) => {
@@ -194,9 +194,14 @@ async function findListeningPorts(pid: number): Promise<number[]> {
       const lines = stdout.split('\n');
       for (const line of lines) {
         if (isWindows) {
-          const match = line.match(/127\.0\.0\.1:(\d+)/);
-          if (match) {
-            ports.push(parseInt(match[1], 10));
+          const trimmed = line.trim();
+          const columns = trimmed.split(/\s+/);
+          const linePid = parseInt(columns[columns.length - 1], 10);
+          if (linePid !== pid) continue;
+
+          const addrMatch = trimmed.match(/127\.0\.0\.1:(\d+)/);
+          if (addrMatch) {
+            ports.push(parseInt(addrMatch[1], 10));
           }
         } else {
           const match = line.match(/:(\d+)\s/);
