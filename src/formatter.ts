@@ -1,7 +1,8 @@
 /**
  * Formats the full Antigravity conversation trajectory as clean markdown.
  * Captures every detail in chat order: thoughts, tool results, assistant
- * responses, web searches, images, commands, edits.
+ * responses, web searches, images, commands, edits, browser sub-agent
+ * trajectories.
  *
  * Field mappings (from raw trajectory inspection):
  *   userInput.userResponse / userInput.items[].text
@@ -16,6 +17,12 @@
  *   grepSearch.query / .searchPathUri
  *   notifyUser.notificationContent
  *   error.userErrorMessage
+ *   browserSubagent.taskName / .task / .result / .taskSummary
+ *   subtrajectory.steps (recursive)
+ *   openBrowserUrl.url
+ *   clickBrowserPixel (coordinates)
+ *   browserPressKey.key
+ *   wait (duration)
  */
 
 function uriToPath(uri: string): string {
@@ -49,6 +56,12 @@ export function formatTrajectoryClean(
   if (steps.length === 0) return '';
 
   const lines: string[] = [];
+  emitSteps(steps, lines, includeUserInput);
+
+  return lines.join('\n').replace(/\n{3,}/g, '\n\n').trim() + '\n';
+}
+
+function emitSteps(steps: any[], lines: string[], includeUserInput: boolean): void {
   let lastCommandOutput = '';
 
   for (const step of steps) {
@@ -104,16 +117,29 @@ export function formatTrajectoryClean(
         break;
 
       case 'CORTEX_STEP_TYPE_BROWSER_SUBAGENT':
-        emitBrowserSubagent(step, lines);
+        emitBrowserSubagent(step, lines, includeUserInput);
         break;
 
       case 'CORTEX_STEP_TYPE_READ_RESOURCE':
         emitReadResource(step, lines);
         break;
 
-      case 'CORTEX_STEP_TYPE_EPHEMERAL_MESSAGE':
+      case 'CORTEX_STEP_TYPE_OPEN_BROWSER_URL':
+        emitOpenBrowserUrl(step, lines);
         break;
 
+      case 'CORTEX_STEP_TYPE_CLICK_BROWSER_PIXEL':
+        emitClickBrowserPixel(step, lines);
+        break;
+
+      case 'CORTEX_STEP_TYPE_BROWSER_PRESS_KEY':
+        emitBrowserPressKey(step, lines);
+        break;
+
+      case 'CORTEX_STEP_TYPE_WAIT':
+        break;
+
+      case 'CORTEX_STEP_TYPE_EPHEMERAL_MESSAGE':
       case 'CORTEX_STEP_TYPE_CHECKPOINT':
       case 'CORTEX_STEP_TYPE_CONVERSATION_HISTORY':
       case 'CORTEX_STEP_TYPE_TASK_BOUNDARY':
@@ -121,11 +147,10 @@ export function formatTrajectoryClean(
         break;
 
       default:
+        emitGenericSubagentStep(step, lines, includeUserInput);
         break;
     }
   }
-
-  return lines.join('\n').replace(/\n{3,}/g, '\n\n').trim() + '\n';
 }
 
 function emitUserInput(step: any, lines: string[]): void {
@@ -321,10 +346,88 @@ function emitErrorMessage(step: any, lines: string[]): void {
   }
 }
 
-function emitBrowserSubagent(step: any, lines: string[]): void {
+function emitBrowserSubagent(step: any, lines: string[], includeUserInput: boolean): void {
+  const bs = step.browserSubagent;
   const args = parseToolArgs(step.metadata?.toolCall?.argumentsJson);
-  if (args?.Instruction || args?.instruction) {
-    lines.push(`Browser: ${args.Instruction || args.instruction}`);
+
+  const taskName = bs?.taskName || args?.TaskName || 'Browser Sub-agent';
+  const task = bs?.task || args?.Task || args?.Instruction || args?.instruction || '';
+  const result = bs?.result || '';
+  const taskSummary = bs?.taskSummary || args?.TaskSummary || '';
+
+  lines.push(taskName);
+  if (taskSummary) {
+    lines.push(taskSummary);
+  }
+  if (task) {
+    lines.push('Goal');
+    lines.push(task);
+  }
+  lines.push('');
+
+  const subSteps = step.subtrajectory?.steps;
+  if (subSteps?.length) {
+    emitSteps(subSteps, lines, includeUserInput);
+
+    // The last planner response in the subtrajectory usually duplicates the
+    // top-level result field, so only emit result when there's no subtrajectory
+    // or the texts differ.
+    if (result && !lastPlannerResponseMatches(subSteps, result)) {
+      lines.push(result);
+      lines.push('');
+    }
+  } else if (result) {
+    lines.push(result);
+    lines.push('');
+  }
+
+  if (bs?.recordingName) {
+    lines.push('Playback available');
+    lines.push('');
+  }
+}
+
+function lastPlannerResponseMatches(steps: any[], result: string): boolean {
+  for (let i = steps.length - 1; i >= 0; i--) {
+    if (steps[i].type === 'CORTEX_STEP_TYPE_PLANNER_RESPONSE') {
+      const pr = steps[i].plannerResponse;
+      const text = pr?.modifiedResponse || pr?.response || '';
+      return text.trim() === result.trim();
+    }
+  }
+  return false;
+}
+
+function emitOpenBrowserUrl(step: any, lines: string[]): void {
+  const ob = step.openBrowserUrl;
+  if (!ob) return;
+
+  const url = ob.url || ob.uri || '';
+  if (url) {
+    lines.push(`Navigated to ${url}`);
+    lines.push('');
+  }
+}
+
+function emitClickBrowserPixel(step: any, lines: string[]): void {
+  const cb = step.clickBrowserPixel;
+  if (!cb) return;
+
+  const x = cb.x ?? cb.pixelX ?? '';
+  const y = cb.y ?? cb.pixelY ?? '';
+  if (x !== '' && y !== '') {
+    lines.push(`Clicked at (${x}, ${y})`);
+    lines.push('');
+  }
+}
+
+function emitBrowserPressKey(step: any, lines: string[]): void {
+  const pk = step.browserPressKey;
+  if (!pk) return;
+
+  const key = pk.key || '';
+  if (key) {
+    lines.push(`Pressed key: ${key}`);
     lines.push('');
   }
 }
@@ -335,6 +438,35 @@ function emitReadResource(step: any, lines: string[]): void {
 
   if (rr.uri) {
     lines.push(`Read resource: ${rr.uri}`);
+    lines.push('');
+  }
+}
+
+/**
+ * Fallback for unknown step types that may carry a subtrajectory.
+ * Extracts any available metadata/result and recursively formats nested steps.
+ */
+function emitGenericSubagentStep(step: any, lines: string[], includeUserInput: boolean): void {
+  if (!step.subtrajectory?.steps?.length) return;
+
+  const args = parseToolArgs(step.metadata?.toolCall?.argumentsJson);
+  const name = args?.TaskName || args?.taskName || step.metadata?.toolCall?.name || '';
+  const task = args?.Task || args?.task || args?.Instruction || args?.instruction || '';
+  const result = args?.result || '';
+
+  if (name) {
+    lines.push(name);
+  }
+  if (task) {
+    lines.push('Goal');
+    lines.push(task);
+    lines.push('');
+  }
+
+  emitSteps(step.subtrajectory.steps, lines, includeUserInput);
+
+  if (result) {
+    lines.push(result);
     lines.push('');
   }
 }

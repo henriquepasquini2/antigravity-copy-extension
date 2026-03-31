@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.4.0] - 2026-03-31
+
+### Added
+- **Full browser sub-agent support** — conversations that use the browser sub-agent now include the task name, goal, all internal thinking/scratchpad blocks, browser actions (navigation, clicks, key presses), the sub-agent's result, and playback availability. Previously only the initial instruction was captured.
+- New step type handlers: `OPEN_BROWSER_URL`, `CLICK_BROWSER_PIXEL`, `BROWSER_PRESS_KEY`, `WAIT`.
+- Generic fallback for unknown step types that carry a `subtrajectory` — future sub-agent types will automatically have their nested steps formatted instead of silently dropped.
+
+### Changed
+- Refactored step processing into a reusable `emitSteps()` function that supports recursive formatting of nested subtrajectories.
+
+### Fixed
+- Browser sub-agent result no longer appears duplicated when the subtrajectory's last planner response already contains the same text.
+
 ## [1.3.1] - 2026-03-28
 
 ### Fixed
