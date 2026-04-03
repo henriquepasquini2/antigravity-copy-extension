@@ -1,13 +1,26 @@
 # Changelog
 
+## [1.6.0] - 2026-04-03
+
+### Added
+- **Claude Code session support** — copy the full conversation trace from Claude Code CLI sessions, including extended thinking blocks, tool calls, and responses.
+- Three new commands under the **Claude Code** category:
+  - **Claude Code: Copy Full Session** (`Ctrl+Shift+Alt+J`) — copies reasoning, tools, and responses as Markdown.
+  - **Claude Code: Copy Full Session with Prompts** — same, plus user messages.
+  - **Claude Code: Dump Raw Session (Debug)** — exports the parsed session as JSON for inspection.
+- Session discovery reads `~/.claude/projects/` and enriches with metadata from `~/.claude/sessions/` index files.
+
+### Changed
+- Command categories renamed from `Claude` to `Claude Cowork` and `Claude Code` for clarity in the command palette.
+
 ## [1.5.0] - 2026-04-03
 
 ### Added
 - **Claude Cowork session support** — copy the full conversation trace from Claude Desktop's Cowork mode, including extended thinking blocks, tool calls, web searches, file operations, and assistant responses.
-- Three new commands under the **Claude** category:
-  - **Claude: Copy Full Cowork Session** (`Ctrl+Shift+Alt+L`) — copies reasoning, tools, and responses as Markdown.
-  - **Claude: Copy Full Cowork Session with Prompts** (`Ctrl+Shift+Alt+K`) — same, plus user messages.
-  - **Claude: Dump Raw Cowork Session (Debug)** — exports the parsed session as JSON for inspection.
+- Three new commands under the **Claude Cowork** category:
+  - **Claude Cowork: Copy Full Session** (`Ctrl+Shift+Alt+L`) — copies reasoning, tools, and responses as Markdown.
+  - **Claude Cowork: Copy Full Session with Prompts** (`Ctrl+Shift+Alt+K`) — same, plus user messages.
+  - **Claude Cowork: Dump Raw Session (Debug)** — exports the parsed session as JSON for inspection.
 - Session discovery automatically finds Claude Desktop's JSONL session files across Windows (MSIX and standard), macOS, and Linux.
 - Session picker shows the first user prompt, session name, model, file size, and relative time.
 - Thinking blocks are formatted as collapsible `<details>` sections in Markdown.

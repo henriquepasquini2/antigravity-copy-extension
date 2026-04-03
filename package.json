@@ -1,8 +1,8 @@
 {
   "name": "antigravity-copy-full",
   "displayName": "Antigravity Copy Full Conversation",
-  "description": "Copy Antigravity and Claude Cowork conversations including the full thought process, extended thinking, and reasoning to clipboard as Markdown",
-  "version": "1.5.0",
+  "description": "Copy Antigravity, Claude Cowork, and Claude Code conversations including the full thought process, extended thinking, and reasoning to clipboard as Markdown",
+  "version": "1.6.0",
   "publisher": "henriquepasquini2",
   "license": "MIT",
   "icon": "images/icon.png",
@@ -24,6 +24,7 @@
     "antigravity",
     "google",
     "claude",
+    "claude-code",
     "cowork",
     "anthropic",
     "chat",
@@ -41,7 +42,10 @@
     "onCommand:antigravity-copy-full.dumpTrajectory",
     "onCommand:antigravity-copy-full.claudeCopySession",
     "onCommand:antigravity-copy-full.claudeCopySessionWithPrompts",
-    "onCommand:antigravity-copy-full.claudeDumpSession"
+    "onCommand:antigravity-copy-full.claudeDumpSession",
+    "onCommand:antigravity-copy-full.claudeCodeCopySession",
+    "onCommand:antigravity-copy-full.claudeCodeCopySessionWithPrompts",
+    "onCommand:antigravity-copy-full.claudeCodeDumpSession"
   ],
   "main": "./out/extension.js",
   "contributes": {
@@ -63,18 +67,33 @@
       },
       {
         "command": "antigravity-copy-full.claudeCopySession",
-        "title": "Copy Full Cowork Session",
-        "category": "Claude"
+        "title": "Copy Full Session",
+        "category": "Claude Cowork"
       },
       {
         "command": "antigravity-copy-full.claudeCopySessionWithPrompts",
-        "title": "Copy Full Cowork Session with Prompts",
-        "category": "Claude"
+        "title": "Copy Full Session with Prompts",
+        "category": "Claude Cowork"
       },
       {
         "command": "antigravity-copy-full.claudeDumpSession",
-        "title": "Dump Raw Cowork Session (Debug)",
-        "category": "Claude"
+        "title": "Dump Raw Session (Debug)",
+        "category": "Claude Cowork"
+      },
+      {
+        "command": "antigravity-copy-full.claudeCodeCopySession",
+        "title": "Copy Full Session",
+        "category": "Claude Code"
+      },
+      {
+        "command": "antigravity-copy-full.claudeCodeCopySessionWithPrompts",
+        "title": "Copy Full Session with Prompts",
+        "category": "Claude Code"
+      },
+      {
+        "command": "antigravity-copy-full.claudeCodeDumpSession",
+        "title": "Dump Raw Session (Debug)",
+        "category": "Claude Code"
       }
     ],
     "keybindings": [
@@ -97,6 +116,11 @@
         "command": "antigravity-copy-full.claudeCopySessionWithPrompts",
         "key": "ctrl+shift+alt+k",
         "mac": "cmd+shift+alt+k"
+      },
+      {
+        "command": "antigravity-copy-full.claudeCodeCopySession",
+        "key": "ctrl+shift+alt+j",
+        "mac": "cmd+shift+alt+j"
       }
     ]
   },

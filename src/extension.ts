@@ -4,7 +4,7 @@ import * as path from 'path';
 import { discoverLanguageServer, LanguageServerInfo } from './discovery';
 import { AntigravityLsClient, CascadeSummary } from './lsClient';
 import { formatTrajectoryClean } from './formatter';
-import { discoverClaudeSessions, readSessionMessages, ClaudeSession } from './claude/sessionDiscovery';
+import { discoverClaudeSessions, discoverClaudeCodeSessions, readSessionMessages, ClaudeSession } from './claude/sessionDiscovery';
 import { formatClaudeSession } from './claude/sessionFormatter';
 
 let cachedLsInfo: LanguageServerInfo | null = null;
@@ -34,6 +34,18 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.commands.registerCommand(
       'antigravity-copy-full.claudeDumpSession',
       () => claudeDumpSession(),
+    ),
+    vscode.commands.registerCommand(
+      'antigravity-copy-full.claudeCodeCopySession',
+      () => claudeCodeCopySession(false),
+    ),
+    vscode.commands.registerCommand(
+      'antigravity-copy-full.claudeCodeCopySessionWithPrompts',
+      () => claudeCodeCopySession(true),
+    ),
+    vscode.commands.registerCommand(
+      'antigravity-copy-full.claudeCodeDumpSession',
+      () => claudeCodeDumpSession(),
     ),
   );
 }
@@ -300,6 +312,138 @@ async function pickClaudeSession(title: string): Promise<ClaudeSession | undefin
 
   const selected = await vscode.window.showQuickPick(items, {
     placeHolder: 'Select a Claude session to copy',
+    title,
+    matchOnDescription: true,
+    matchOnDetail: true,
+  });
+
+  return selected?.session;
+}
+
+// ---------------------------------------------------------------------------
+// Claude Code commands
+// ---------------------------------------------------------------------------
+
+async function claudeCodeCopySession(includePrompts: boolean) {
+  try {
+    const session = await pickClaudeCodeSession(
+      includePrompts
+        ? 'Claude Code: Copy Full Session with Prompts'
+        : 'Claude Code: Copy Full Session',
+    );
+    if (!session) return;
+
+    await vscode.window.withProgress(
+      {
+        location: vscode.ProgressLocation.Notification,
+        title: 'Reading Claude Code session...',
+        cancellable: false,
+      },
+      async () => {
+        const messages = readSessionMessages(session.filePath);
+        const markdown = formatClaudeSession(messages, includePrompts);
+
+        await vscode.env.clipboard.writeText(markdown);
+
+        const sizeStr = formatSize(markdown.length);
+        vscode.window.showInformationMessage(
+          `Claude Code session copied to clipboard (${sizeStr})`
+        );
+      },
+    );
+  } catch (err: any) {
+    vscode.window.showErrorMessage(
+      `Claude Code Copy: ${err?.message || String(err)}`
+    );
+  }
+}
+
+async function claudeCodeDumpSession() {
+  try {
+    const session = await pickClaudeCodeSession('Claude Code: Dump Raw Session (Debug)');
+    if (!session) return;
+
+    await vscode.window.withProgress(
+      {
+        location: vscode.ProgressLocation.Notification,
+        title: 'Dumping Claude Code session...',
+        cancellable: false,
+      },
+      async () => {
+        const messages = readSessionMessages(session.filePath);
+        const json = JSON.stringify(messages, null, 2);
+
+        const defaultName = `claude-code-session-${path.basename(session.filePath, '.jsonl').substring(0, 8)}.json`;
+        const saveUri = await vscode.window.showSaveDialog({
+          defaultUri: vscode.Uri.file(
+            path.join(
+              vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || require('os').homedir(),
+              defaultName,
+            ),
+          ),
+          filters: { 'JSON': ['json'] },
+        });
+
+        if (!saveUri) return;
+
+        fs.writeFileSync(saveUri.fsPath, json, 'utf-8');
+
+        const sizeKb = (json.length / 1024).toFixed(1);
+        const action = await vscode.window.showInformationMessage(
+          `Session dumped (${sizeKb} KB): ${saveUri.fsPath}`,
+          'Open File',
+        );
+        if (action === 'Open File') {
+          const doc = await vscode.workspace.openTextDocument(saveUri);
+          await vscode.window.showTextDocument(doc);
+        }
+      },
+    );
+  } catch (err: any) {
+    vscode.window.showErrorMessage(
+      `Claude Code Dump: ${err?.message || String(err)}`
+    );
+  }
+}
+
+async function pickClaudeCodeSession(title: string): Promise<ClaudeSession | undefined> {
+  const sessions = await vscode.window.withProgress(
+    {
+      location: vscode.ProgressLocation.Notification,
+      title: 'Scanning for Claude Code sessions...',
+      cancellable: false,
+    },
+    async () => discoverClaudeCodeSessions(),
+  );
+
+  if (sessions.length === 0) {
+    vscode.window.showWarningMessage(
+      'No Claude Code sessions found. Make sure you have used Claude Code at least once.'
+    );
+    return undefined;
+  }
+
+  const items: ClaudeSessionPickItem[] = sessions.map(s => {
+    const timeStr = formatRelativeTime(s.modified);
+    const label = s.firstPrompt
+      ? truncate(s.firstPrompt, 80)
+      : s.sessionName;
+    const sizeStr = s.sizeBytes < 1024
+      ? `${s.sizeBytes} B`
+      : `${(s.sizeBytes / 1024).toFixed(0)} KB`;
+    const model = s.model || '';
+    const detailParts = [s.sessionName, model, sizeStr].filter(Boolean);
+
+    return {
+      label,
+      description: timeStr,
+      detail: detailParts.join(' · '),
+      session: s,
+    };
+  });
+
+  const selected = await vscode.window.showQuickPick(items, {
+    placeHolder: 'Select a Claude Code session to copy',
     title,
     matchOnDescription: true,
     matchOnDetail: true,

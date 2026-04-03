@@ -17,6 +17,8 @@ export interface ClaudeSession {
   model?: string;
   /** Timestamp of first message */
   startTime?: string;
+  /** Source: "cowork" or "code" */
+  source?: 'cowork' | 'code';
 }
 
 /**
@@ -186,6 +188,7 @@ export function discoverClaudeSessions(): ClaudeSession[] {
           sessionName: extractSessionName(filePath),
           modified: stat.mtime,
           sizeBytes: stat.size,
+          source: 'cowork',
           ...meta,
         });
       } catch { /* skip unreadable files */ }
@@ -194,6 +197,124 @@ export function discoverClaudeSessions(): ClaudeSession[] {
 
   sessions.sort((a, b) => b.modified.getTime() - a.modified.getTime());
   return sessions;
+}
+
+/**
+ * Decodes Claude Code's encoded project directory name back to a path.
+ * e.g. "D--Downloads" → "D:\Downloads", "-home-user-project" → "/home/user/project"
+ */
+function decodeProjectPath(encoded: string): string {
+  if (encoded.match(/^[A-Z]-/)) {
+    const drive = encoded[0];
+    const rest = encoded.substring(2).replace(/-/g, '\\');
+    return `${drive}:\\${rest}`;
+  }
+  return encoded.replace(/-/g, '/');
+}
+
+/**
+ * Extracts a short project name from a Claude Code project directory.
+ */
+function extractProjectName(projectDir: string): string {
+  const decoded = decodeProjectPath(projectDir);
+  const parts = decoded.replace(/\\/g, '/').split('/').filter(Boolean);
+  return parts[parts.length - 1] || projectDir;
+}
+
+/**
+ * Discovers all Claude Code session files from ~/.claude/projects/.
+ * Returns them sorted by modification time (most recent first).
+ */
+export function discoverClaudeCodeSessions(): ClaudeSession[] {
+  const claudeHome = path.join(os.homedir(), '.claude');
+  const projectsDir = path.join(claudeHome, 'projects');
+  const sessions: ClaudeSession[] = [];
+
+  if (!fs.existsSync(projectsDir)) return sessions;
+
+  const sessionIndex = loadSessionIndex(claudeHome);
+
+  let projectDirs: fs.Dirent[];
+  try {
+    projectDirs = fs.readdirSync(projectsDir, { withFileTypes: true });
+  } catch {
+    return sessions;
+  }
+
+  for (const projEntry of projectDirs) {
+    if (!projEntry.isDirectory()) continue;
+
+    const projDir = path.join(projectsDir, projEntry.name);
+    const projectName = extractProjectName(projEntry.name);
+
+    let files: fs.Dirent[];
+    try {
+      files = fs.readdirSync(projDir, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+
+    for (const file of files) {
+      if (!file.isFile() || !file.name.endsWith('.jsonl')) continue;
+
+      const filePath = path.join(projDir, file.name);
+      try {
+        const stat = fs.statSync(filePath);
+        const meta = extractSessionMeta(filePath);
+        const sessionId = path.basename(file.name, '.jsonl');
+        const indexEntry = sessionIndex.get(sessionId);
+
+        sessions.push({
+          filePath,
+          sessionName: indexEntry?.cwd
+            ? extractProjectName(path.basename(indexEntry.cwd))
+            : projectName,
+          modified: stat.mtime,
+          sizeBytes: stat.size,
+          source: 'code',
+          ...meta,
+        });
+      } catch { /* skip unreadable files */ }
+    }
+  }
+
+  sessions.sort((a, b) => b.modified.getTime() - a.modified.getTime());
+  return sessions;
+}
+
+interface SessionIndexEntry {
+  pid: number;
+  sessionId: string;
+  cwd: string;
+  startedAt: number;
+  kind: string;
+  entrypoint: string;
+}
+
+/**
+ * Loads the session index from ~/.claude/sessions/*.json.
+ * Returns a map of sessionId → index entry.
+ */
+function loadSessionIndex(claudeHome: string): Map<string, SessionIndexEntry> {
+  const index = new Map<string, SessionIndexEntry>();
+  const sessionsDir = path.join(claudeHome, 'sessions');
+
+  if (!fs.existsSync(sessionsDir)) return index;
+
+  try {
+    for (const file of fs.readdirSync(sessionsDir)) {
+      if (!file.endsWith('.json')) continue;
+      try {
+        const raw = fs.readFileSync(path.join(sessionsDir, file), 'utf-8');
+        const entry: SessionIndexEntry = JSON.parse(raw);
+        if (entry.sessionId) {
+          index.set(entry.sessionId, entry);
+        }
+      } catch { /* skip malformed */ }
+    }
+  } catch { /* dir read error */ }
+
+  return index;
 }
 
 /**
