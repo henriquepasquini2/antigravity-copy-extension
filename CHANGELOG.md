@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.6.1] - 2026-04-03
+
+### Changed
+- Removed HTML `<details>` wrappers from thinking blocks and large tool outputs. All content now emits as plain text for a cleaner clipboard, consistent with the Antigravity formatter.
+
 ## [1.6.0] - 2026-04-03
 
 ### Added

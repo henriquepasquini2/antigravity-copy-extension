@@ -84,12 +84,7 @@ function emitThinking(block: any, lines: string[]): void {
   const thinking = block.thinking;
   if (!thinking?.trim()) return;
 
-  lines.push('<details>');
-  lines.push('<summary>Thinking</summary>');
-  lines.push('');
   lines.push(thinking.trim());
-  lines.push('');
-  lines.push('</details>');
   lines.push('');
 }
 
@@ -173,20 +168,6 @@ function emitToolResult(block: any, lines: string[]): void {
   const trimmed = content.trim();
   if (!trimmed) return;
 
-  if (trimmed.length > 2000) {
-    lines.push(`<details>`);
-    lines.push(`<summary>Tool output (${formatSize(trimmed.length)})</summary>`);
-    lines.push('');
-    lines.push(trimmed);
-    lines.push('');
-    lines.push('</details>');
-  } else {
-    lines.push(trimmed);
-  }
+  lines.push(trimmed);
   lines.push('');
-}
-
-function formatSize(chars: number): string {
-  if (chars < 1024) return `${chars} chars`;
-  return `${(chars / 1024).toFixed(1)} KB`;
 }
