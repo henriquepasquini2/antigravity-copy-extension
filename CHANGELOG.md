@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.5.0] - 2026-04-03
+
+### Added
+- **Claude Cowork session support** — copy the full conversation trace from Claude Desktop's Cowork mode, including extended thinking blocks, tool calls, web searches, file operations, and assistant responses.
+- Three new commands under the **Claude** category:
+  - **Claude: Copy Full Cowork Session** (`Ctrl+Shift+Alt+L`) — copies reasoning, tools, and responses as Markdown.
+  - **Claude: Copy Full Cowork Session with Prompts** (`Ctrl+Shift+Alt+K`) — same, plus user messages.
+  - **Claude: Dump Raw Cowork Session (Debug)** — exports the parsed session as JSON for inspection.
+- Session discovery automatically finds Claude Desktop's JSONL session files across Windows (MSIX and standard), macOS, and Linux.
+- Session picker shows the first user prompt, session name, model, file size, and relative time.
+- Thinking blocks are formatted as collapsible `<details>` sections in Markdown.
+- Tool calls formatted per type: Bash commands in code blocks, file operations with paths, web searches with queries, todo lists with checkboxes.
+- Large tool outputs (>2 KB) are wrapped in collapsible sections to keep the Markdown readable.
+
 ## [1.4.0] - 2026-03-31
 
 ### Added

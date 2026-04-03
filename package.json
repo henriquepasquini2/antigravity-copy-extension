@@ -1,8 +1,8 @@
 {
   "name": "antigravity-copy-full",
   "displayName": "Antigravity Copy Full Conversation",
-  "description": "Copy Antigravity chat conversations including the full thought process and reasoning to clipboard as Markdown",
-  "version": "1.4.0",
+  "description": "Copy Antigravity and Claude Cowork conversations including the full thought process, extended thinking, and reasoning to clipboard as Markdown",
+  "version": "1.5.0",
   "publisher": "henriquepasquini2",
   "license": "MIT",
   "icon": "images/icon.png",
@@ -15,7 +15,7 @@
   },
   "homepage": "https://github.com/henriquepasquini2/antigravity-copy-extension#readme",
   "engines": {
-    "vscode": "^1.107.0"
+    "vscode": "^1.105.0"
   },
   "categories": [
     "Other"
@@ -23,10 +23,14 @@
   "keywords": [
     "antigravity",
     "google",
+    "claude",
+    "cowork",
+    "anthropic",
     "chat",
     "conversation",
     "thoughts",
     "reasoning",
+    "thinking",
     "copy",
     "export",
     "markdown"
@@ -34,7 +38,10 @@
   "activationEvents": [
     "onCommand:antigravity-copy-full.copyConversation",
     "onCommand:antigravity-copy-full.copyConversationWithPrompts",
-    "onCommand:antigravity-copy-full.dumpTrajectory"
+    "onCommand:antigravity-copy-full.dumpTrajectory",
+    "onCommand:antigravity-copy-full.claudeCopySession",
+    "onCommand:antigravity-copy-full.claudeCopySessionWithPrompts",
+    "onCommand:antigravity-copy-full.claudeDumpSession"
   ],
   "main": "./out/extension.js",
   "contributes": {
@@ -53,6 +60,21 @@
         "command": "antigravity-copy-full.dumpTrajectory",
         "title": "Dump Raw Trajectory (Debug)",
         "category": "Antigravity"
+      },
+      {
+        "command": "antigravity-copy-full.claudeCopySession",
+        "title": "Copy Full Cowork Session",
+        "category": "Claude"
+      },
+      {
+        "command": "antigravity-copy-full.claudeCopySessionWithPrompts",
+        "title": "Copy Full Cowork Session with Prompts",
+        "category": "Claude"
+      },
+      {
+        "command": "antigravity-copy-full.claudeDumpSession",
+        "title": "Dump Raw Cowork Session (Debug)",
+        "category": "Claude"
       }
     ],
     "keybindings": [
@@ -65,6 +87,16 @@
         "command": "antigravity-copy-full.copyConversationWithPrompts",
         "key": "ctrl+shift+alt+p",
         "mac": "cmd+shift+alt+p"
+      },
+      {
+        "command": "antigravity-copy-full.claudeCopySession",
+        "key": "ctrl+shift+alt+l",
+        "mac": "cmd+shift+alt+l"
+      },
+      {
+        "command": "antigravity-copy-full.claudeCopySessionWithPrompts",
+        "key": "ctrl+shift+alt+k",
+        "mac": "cmd+shift+alt+k"
       }
     ]
   },
@@ -77,7 +109,7 @@
   },
   "devDependencies": {
     "@types/node": "^25.5.0",
-    "@types/vscode": "^1.107.0",
+    "@types/vscode": "^1.105.0",
     "@vscode/vsce": "^3.7.1",
     "ovsx": "^0.10.10",
     "typescript": "^6.0.2"
