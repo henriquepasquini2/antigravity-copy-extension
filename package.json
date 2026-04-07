@@ -1,8 +1,8 @@
 {
   "name": "antigravity-copy-full",
   "displayName": "Antigravity Copy Full Conversation",
-  "description": "Copy Antigravity, Claude Cowork, and Claude Code conversations including the full thought process, extended thinking, and reasoning to clipboard as Markdown",
-  "version": "1.6.1",
+  "description": "Copy Antigravity, Claude Cowork, Claude Code, and Claude Excel conversations including the full thought process, extended thinking, and reasoning to clipboard as Markdown",
+  "version": "1.7.0",
   "publisher": "henriquepasquini2",
   "license": "MIT",
   "icon": "images/icon.png",
@@ -45,7 +45,10 @@
     "onCommand:antigravity-copy-full.claudeDumpSession",
     "onCommand:antigravity-copy-full.claudeCodeCopySession",
     "onCommand:antigravity-copy-full.claudeCodeCopySessionWithPrompts",
-    "onCommand:antigravity-copy-full.claudeCodeDumpSession"
+    "onCommand:antigravity-copy-full.claudeCodeDumpSession",
+    "onCommand:antigravity-copy-full.claudeExcelCopy",
+    "onCommand:antigravity-copy-full.claudeExcelCopyWithPrompts",
+    "onCommand:antigravity-copy-full.claudeExcelSetup"
   ],
   "main": "./out/extension.js",
   "contributes": {
@@ -94,6 +97,21 @@
         "command": "antigravity-copy-full.claudeCodeDumpSession",
         "title": "Dump Raw Session (Debug)",
         "category": "Claude Code"
+      },
+      {
+        "command": "antigravity-copy-full.claudeExcelCopy",
+        "title": "Copy Full Session",
+        "category": "Claude Excel"
+      },
+      {
+        "command": "antigravity-copy-full.claudeExcelCopyWithPrompts",
+        "title": "Copy Full Session with Prompts",
+        "category": "Claude Excel"
+      },
+      {
+        "command": "antigravity-copy-full.claudeExcelSetup",
+        "title": "Setup Debug Port",
+        "category": "Claude Excel"
       }
     ],
     "keybindings": [
@@ -136,6 +154,7 @@
     "@types/vscode": "^1.105.0",
     "@vscode/vsce": "^3.7.1",
     "ovsx": "^0.10.10",
-    "typescript": "^6.0.2"
+    "typescript": "^6.0.2",
+    "ws": "^8.20.0"
   }
 }

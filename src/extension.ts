@@ -6,6 +6,7 @@ import { AntigravityLsClient, CascadeSummary } from './lsClient';
 import { formatTrajectoryClean } from './formatter';
 import { discoverClaudeSessions, discoverClaudeCodeSessions, readSessionMessages, ClaudeSession } from './claude/sessionDiscovery';
 import { formatClaudeSession } from './claude/sessionFormatter';
+import { scrapeExcelConversation, isCdpAvailable } from './claude/excelScraper';
 
 let cachedLsInfo: LanguageServerInfo | null = null;
 
@@ -46,6 +47,18 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.commands.registerCommand(
       'antigravity-copy-full.claudeCodeDumpSession',
       () => claudeCodeDumpSession(),
+    ),
+    vscode.commands.registerCommand(
+      'antigravity-copy-full.claudeExcelCopy',
+      () => claudeExcelCopy(false),
+    ),
+    vscode.commands.registerCommand(
+      'antigravity-copy-full.claudeExcelCopyWithPrompts',
+      () => claudeExcelCopy(true),
+    ),
+    vscode.commands.registerCommand(
+      'antigravity-copy-full.claudeExcelSetup',
+      () => claudeExcelSetup(),
     ),
   );
 }
@@ -450,6 +463,96 @@ async function pickClaudeCodeSession(title: string): Promise<ClaudeSession | und
   });
 
   return selected?.session;
+}
+
+// ---------------------------------------------------------------------------
+// Claude Excel commands
+// ---------------------------------------------------------------------------
+
+async function claudeExcelCopy(includePrompts: boolean) {
+  try {
+    const available = await isCdpAvailable();
+    if (!available) {
+      const action = await vscode.window.showErrorMessage(
+        'Cannot connect to Excel\'s WebView2 debug port. Run "Claude Excel: Setup Debug Port" first.',
+        'Run Setup',
+      );
+      if (action === 'Run Setup') {
+        await claudeExcelSetup();
+      }
+      return;
+    }
+
+    await vscode.window.withProgress(
+      {
+        location: vscode.ProgressLocation.Notification,
+        title: 'Scraping Claude Excel conversation...',
+        cancellable: false,
+      },
+      async (progress) => {
+        progress.report({ message: 'Expanding tool sections...' });
+        const markdown = await scrapeExcelConversation(9222, includePrompts);
+
+        await vscode.env.clipboard.writeText(markdown);
+
+        const sizeStr = formatSize(markdown.length);
+        vscode.window.showInformationMessage(
+          `Claude Excel conversation copied to clipboard (${sizeStr})`
+        );
+      },
+    );
+  } catch (err: any) {
+    vscode.window.showErrorMessage(
+      `Claude Excel Copy: ${err?.message || String(err)}`
+    );
+  }
+}
+
+async function claudeExcelSetup() {
+  const cp = require('child_process') as typeof import('child_process');
+
+  const already = await isCdpAvailable();
+  if (already) {
+    vscode.window.showInformationMessage(
+      'Debug port is already active. You can use "Claude Excel: Copy Full Session" now.'
+    );
+    return;
+  }
+
+  const envVal = await new Promise<string | undefined>((resolve) => {
+    cp.exec(
+      'powershell -NoProfile -Command "[Environment]::GetEnvironmentVariable(\'WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS\', \'User\')"',
+      (err, stdout) => resolve(err ? undefined : stdout.trim() || undefined),
+    );
+  });
+
+  if (envVal?.includes('remote-debugging-port')) {
+    vscode.window.showWarningMessage(
+      'Environment variable is set but the debug port is not responding. Restart Excel to activate it.'
+    );
+    return;
+  }
+
+  const confirm = await vscode.window.showInformationMessage(
+    'This will set a user environment variable to enable the WebView2 debug port for Excel. ' +
+    'You will need to restart Excel once after this.',
+    'Set Variable',
+    'Cancel',
+  );
+
+  if (confirm !== 'Set Variable') return;
+
+  await new Promise<void>((resolve, reject) => {
+    cp.exec(
+      'powershell -NoProfile -Command "[Environment]::SetEnvironmentVariable(\'WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS\', \'--remote-debugging-port=9222\', \'User\')"',
+      (err) => err ? reject(err) : resolve(),
+    );
+  });
+
+  vscode.window.showInformationMessage(
+    'Environment variable set. Close and reopen Excel, then open the Claude add-in. ' +
+    'After that, "Claude Excel: Copy Full Session" will work.'
+  );
 }
 
 // ---------------------------------------------------------------------------

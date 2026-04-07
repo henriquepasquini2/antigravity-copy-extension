@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.7.0] - 2026-04-05
+
+### Added
+- **Claude Excel session support** — copy the full conversation from Claude's Excel add-in, including all tool calls, code blocks, parameters, results, and search outputs that are normally hidden behind expandable pills.
+- Three new commands under the **Claude Excel** category:
+  - **Claude Excel: Copy Full Session** — copies the assistant's response with all tool content expanded.
+  - **Claude Excel: Copy Full Session with Prompts** — same, plus user messages with `## User` / `## Assistant` headers.
+  - **Claude Excel: Setup Debug Port** — one-time setup that enables the WebView2 debug port (requires Excel restart).
+- Auto-expands all collapsed tool pills, inner tool rows, "Show more" buttons, and "Result" toggles before scraping.
+- Connects to the Excel WebView2 via Chrome DevTools Protocol on port 9222.
+- Handles IPv4/IPv6 port conflicts when multiple WebView2 apps (e.g. WhatsApp) share the same port.
+
+### Changed
+- Removed HTML `<details>` wrappers from thinking blocks and large tool outputs. All content now emits as plain text for a cleaner clipboard, consistent with the Antigravity formatter.
+
 ## [1.6.1] - 2026-04-03
 
 ### Changed
