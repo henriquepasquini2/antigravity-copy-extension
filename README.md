@@ -183,16 +183,19 @@ I'm currently focused on the hero section...
 4. Extracts thinking blocks, text responses, tool calls, and tool results
 5. Formats everything as clean Markdown and copies to clipboard
 
-### Claude Excel
+### Claude Excel & PowerPoint
 
-1. Connects to `http://127.0.0.1:9222/json/list` (and `[::1]:9222` as fallback) to find the `pivot.claude.ai` WebView2 target
-2. Opens a WebSocket to the target's Chrome DevTools Protocol endpoint
-3. Sends `Runtime.evaluate` to programmatically click all collapsed pills, inner tool rows, "Show more" buttons, and "Result" toggles
-4. Waits for content to render, then scrapes the full `innerText` of each conversation block
-5. Classifies blocks as user or assistant based on DOM structure (right-aligned gray bubbles vs. everything else)
-6. Formats as clean Markdown and copies to clipboard
+1. Uses Windows process tree inspection (`Get-CimInstance Win32_Process` + `netstat`) to find the correct Office app's WebView2 process and its CDP address
+2. Connects to `http://127.0.0.1:9242/json/list` or `http://[::1]:9242/json/list` to find the `pivot.claude.ai` target for the right app
+3. Opens a WebSocket to the target's Chrome DevTools Protocol endpoint
+4. Sends `Runtime.evaluate` to programmatically click all collapsed pills, inner tool rows, "Show more" buttons, and "Result" toggles
+5. Waits for content to render, then scrapes the full `innerText` of each conversation block
+6. Classifies blocks as user or assistant based on DOM structure (right-aligned gray bubbles vs. everything else)
+7. Formats as clean Markdown and copies to clipboard
 
-**One-time setup:** The `Claude Excel: Setup Debug Port` command sets the `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS` user environment variable to `--remote-debugging-port=9222`. This tells all WebView2 instances (including Excel's Claude add-in) to open a CDP debug port on localhost. The variable persists across reboots. Excel must be restarted once after setting it.
+**One-time setup:** The `Claude Excel: Setup Debug Port` command sets the `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS` user environment variable to `--remote-debugging-port=9242`. This tells all WebView2 instances (including Office add-ins) to open a CDP debug port on localhost. The variable persists across reboots. Office apps must be restarted once after setting it.
+
+> **Note:** Port 9242 is used instead of the common 9222 to avoid conflicts with Chrome, WhatsApp, and other WebView2 apps. When both Excel and PowerPoint are open, the extension uses process tree matching to connect to the correct app.
 
 ## License
 

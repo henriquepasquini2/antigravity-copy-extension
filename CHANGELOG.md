@@ -8,6 +8,12 @@
   - **Claude PowerPoint: Copy Full Session** — copies the assistant's response with all tool content expanded.
   - **Claude PowerPoint: Copy Full Session with Prompts** — same, plus user messages with `## User` / `## Assistant` headers.
 - Uses the same one-time debug port setup as Excel (the `Claude Excel: Setup Debug Port` command applies to all Office WebView2 instances).
+- **Process tree matching** — when both Excel and PowerPoint are open, the extension uses Windows process tree inspection (`Get-CimInstance Win32_Process` + `netstat`) to connect to the correct app's WebView2, preventing cross-app scraping.
+- Properly refuses to scrape when the target Office app is not running, instead of silently falling back to another app.
+
+### Changed
+- CDP debug port changed from 9222 to **9242** to avoid conflicts with Chrome, WhatsApp, and other WebView2 apps that commonly use 9222.
+- Error messages now show the correct app name ("PowerPoint" vs "Excel") and mention both apps where appropriate.
 
 ## [1.7.0] - 2026-04-05
 
@@ -16,10 +22,10 @@
 - Three new commands under the **Claude Excel** category:
   - **Claude Excel: Copy Full Session** — copies the assistant's response with all tool content expanded.
   - **Claude Excel: Copy Full Session with Prompts** — same, plus user messages with `## User` / `## Assistant` headers.
-  - **Claude Excel: Setup Debug Port** — one-time setup that enables the WebView2 debug port (requires Excel restart).
+  - **Claude Excel: Setup Debug Port** — one-time setup that enables the WebView2 debug port for all Office apps (requires Office restart).
 - Auto-expands all collapsed tool pills, inner tool rows, "Show more" buttons, and "Result" toggles before scraping.
-- Connects to the Excel WebView2 via Chrome DevTools Protocol on port 9222.
-- Handles IPv4/IPv6 port conflicts when multiple WebView2 apps (e.g. WhatsApp) share the same port.
+- Connects to the Office WebView2 via Chrome DevTools Protocol on port 9242.
+- Handles IPv4/IPv6 port conflicts when multiple WebView2 apps share the same port.
 
 ### Changed
 - Removed HTML `<details>` wrappers from thinking blocks and large tool outputs. All content now emits as plain text for a cleaner clipboard, consistent with the Antigravity formatter.

@@ -6,7 +6,7 @@ import { AntigravityLsClient, CascadeSummary } from './lsClient';
 import { formatTrajectoryClean } from './formatter';
 import { discoverClaudeSessions, discoverClaudeCodeSessions, readSessionMessages, ClaudeSession } from './claude/sessionDiscovery';
 import { formatClaudeSession } from './claude/sessionFormatter';
-import { scrapeExcelConversation, isCdpAvailable } from './claude/excelScraper';
+import { scrapeExcelConversation, isCdpAvailable, checkCdpStatus } from './claude/excelScraper';
 
 let cachedLsInfo: LanguageServerInfo | null = null;
 
@@ -50,11 +50,11 @@ export function activate(context: vscode.ExtensionContext) {
     ),
     vscode.commands.registerCommand(
       'antigravity-copy-full.claudeExcelCopy',
-      () => claudeExcelCopy(false),
+      () => claudeOfficeCopy(false, 'Excel', 'EXCEL.EXE'),
     ),
     vscode.commands.registerCommand(
       'antigravity-copy-full.claudeExcelCopyWithPrompts',
-      () => claudeExcelCopy(true),
+      () => claudeOfficeCopy(true, 'Excel', 'EXCEL.EXE'),
     ),
     vscode.commands.registerCommand(
       'antigravity-copy-full.claudeExcelSetup',
@@ -62,11 +62,11 @@ export function activate(context: vscode.ExtensionContext) {
     ),
     vscode.commands.registerCommand(
       'antigravity-copy-full.claudePptCopy',
-      () => claudeExcelCopy(false),
+      () => claudeOfficeCopy(false, 'PowerPoint', 'POWERPNT.EXE'),
     ),
     vscode.commands.registerCommand(
       'antigravity-copy-full.claudePptCopyWithPrompts',
-      () => claudeExcelCopy(true),
+      () => claudeOfficeCopy(true, 'PowerPoint', 'POWERPNT.EXE'),
     ),
   );
 }
@@ -477,12 +477,12 @@ async function pickClaudeCodeSession(title: string): Promise<ClaudeSession | und
 // Claude Excel commands
 // ---------------------------------------------------------------------------
 
-async function claudeExcelCopy(includePrompts: boolean) {
+async function claudeOfficeCopy(includePrompts: boolean, appName: string, appExe?: string) {
   try {
-    const available = await isCdpAvailable();
-    if (!available) {
+    const status = await checkCdpStatus(9242, appExe);
+    if (status === 'no-cdp') {
       const action = await vscode.window.showErrorMessage(
-        'Cannot connect to Excel\'s WebView2 debug port. Run "Claude Excel: Setup Debug Port" first.',
+        `Cannot connect to the WebView2 debug port. Run "Claude Excel: Setup Debug Port" first, then restart ${appName}.`,
         'Run Setup',
       );
       if (action === 'Run Setup') {
@@ -490,28 +490,34 @@ async function claudeExcelCopy(includePrompts: boolean) {
       }
       return;
     }
+    if (status === 'no-claude') {
+      vscode.window.showErrorMessage(
+        `Debug port is active but the Claude add-in was not found. Make sure ${appName} is open with the Claude add-in visible.`
+      );
+      return;
+    }
 
     await vscode.window.withProgress(
       {
         location: vscode.ProgressLocation.Notification,
-        title: 'Scraping Claude Excel conversation...',
+        title: `Scraping Claude ${appName} conversation...`,
         cancellable: false,
       },
       async (progress) => {
         progress.report({ message: 'Expanding tool sections...' });
-        const markdown = await scrapeExcelConversation(9222, includePrompts);
+        const markdown = await scrapeExcelConversation(9242, includePrompts, appExe);
 
         await vscode.env.clipboard.writeText(markdown);
 
         const sizeStr = formatSize(markdown.length);
         vscode.window.showInformationMessage(
-          `Claude Excel conversation copied to clipboard (${sizeStr})`
+          `Claude ${appName} conversation copied to clipboard (${sizeStr})`
         );
       },
     );
   } catch (err: any) {
     vscode.window.showErrorMessage(
-      `Claude Excel Copy: ${err?.message || String(err)}`
+      `Claude ${appName} Copy: ${err?.message || String(err)}`
     );
   }
 }
@@ -536,14 +542,14 @@ async function claudeExcelSetup() {
 
   if (envVal?.includes('remote-debugging-port')) {
     vscode.window.showWarningMessage(
-      'Environment variable is set but the debug port is not responding. Restart Excel to activate it.'
+      'Environment variable is set but the debug port is not responding. Restart Excel and/or PowerPoint to activate it.'
     );
     return;
   }
 
   const confirm = await vscode.window.showInformationMessage(
-    'This will set a user environment variable to enable the WebView2 debug port for Excel. ' +
-    'You will need to restart Excel once after this.',
+    'This will set a user environment variable to enable the WebView2 debug port for Office apps. ' +
+    'You will need to restart Excel/PowerPoint once after this.',
     'Set Variable',
     'Cancel',
   );
@@ -552,14 +558,14 @@ async function claudeExcelSetup() {
 
   await new Promise<void>((resolve, reject) => {
     cp.exec(
-      'powershell -NoProfile -Command "[Environment]::SetEnvironmentVariable(\'WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS\', \'--remote-debugging-port=9222\', \'User\')"',
+      'powershell -NoProfile -Command "[Environment]::SetEnvironmentVariable(\'WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS\', \'--remote-debugging-port=9242\', \'User\')"',
       (err) => err ? reject(err) : resolve(),
     );
   });
 
   vscode.window.showInformationMessage(
-    'Environment variable set. Close and reopen Excel, then open the Claude add-in. ' +
-    'After that, "Claude Excel: Copy Full Session" will work.'
+    'Environment variable set. Close and reopen Excel/PowerPoint, then open the Claude add-in. ' +
+    'After that, the Claude Excel and PowerPoint copy commands will work.'
   );
 }
 

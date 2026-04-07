@@ -1,5 +1,7 @@
 import * as http from 'http';
 import * as crypto from 'crypto';
+import * as cp from 'child_process';
+import * as os from 'os';
 
 interface CdpTarget {
   id: string;
@@ -9,26 +11,74 @@ interface CdpTarget {
 }
 
 /**
- * Finds the Claude Office add-in CDP target on the debug port.
- * Tries both IPv4 (127.0.0.1) and IPv6 (::1) since multiple WebView2 apps
- * may bind to different addresses on the same port.
+ * Finds the host address where a specific Office app's WebView2 is listening.
+ * Uses netstat + process tree to match the CDP port to the right Office exe.
  */
-export async function findClaudeExcelTarget(port = 9222): Promise<CdpTarget | null> {
-  for (const host of ['127.0.0.1', '[::1]']) {
-    const targets = await cdpHttpGet<CdpTarget[]>(port, '/json/list', host);
+async function findHostForApp(port: number, appExe: string): Promise<string | null> {
+  if (os.platform() !== 'win32') return null;
+
+  try {
+    const wv2Pids = await new Promise<number[]>((resolve, reject) => {
+      cp.exec(
+        `powershell -NoProfile -Command "Get-CimInstance Win32_Process | Where-Object { $_.Name -eq 'msedgewebview2.exe' -and $_.CommandLine -match '${appExe}' -and $_.CommandLine -match 'embedded-browser-webview=1' } | Select-Object -ExpandProperty ProcessId"`,
+        (err, stdout) => {
+          if (err) return resolve([]);
+          resolve(stdout.trim().split(/\r?\n/).map(Number).filter(Boolean));
+        },
+      );
+    });
+
+    if (wv2Pids.length === 0) return null;
+
+    const netstatOut = await new Promise<string>((resolve, reject) => {
+      cp.exec('netstat -ano', (err, stdout) => err ? resolve('') : resolve(stdout));
+    });
+
+    for (const line of netstatOut.split('\n')) {
+      if (!line.includes('LISTENING') || !line.includes(String(port))) continue;
+      const cols = line.trim().split(/\s+/);
+      const pid = parseInt(cols[cols.length - 1], 10);
+      if (wv2Pids.includes(pid)) {
+        if (line.includes('127.0.0.1')) return '127.0.0.1';
+        if (line.includes('[::1]') || line.includes('::1')) return '::1';
+      }
+    }
+  } catch { /* fallback to scanning */ }
+
+  return null;
+}
+
+/**
+ * Finds the Claude Office add-in CDP target for a specific Office app.
+ * If appExe is provided, uses process tree matching to find the right host.
+ * Falls back to scanning both IPv4 and IPv6.
+ */
+export async function findClaudeOfficeTarget(port = 9242, appExe?: string): Promise<CdpTarget | null> {
+  const hosts: string[] = [];
+
+  if (appExe) {
+    const preferred = await findHostForApp(port, appExe);
+    if (preferred) {
+      hosts.push(preferred);
+    } else {
+      return null;
+    }
+  } else {
+    hosts.push('127.0.0.1');
+    hosts.push('::1');
+  }
+
+  for (const host of hosts) {
+    const hostForHttp = host === '::1' ? '[::1]' : host;
+    const targets = await cdpHttpGet<CdpTarget[]>(port, '/json/list', hostForHttp);
     if (!targets) continue;
     const match = targets.find(t =>
       t.url.includes('pivot.claude.ai') || t.title.includes('Claude in Microsoft')
     );
     if (match) {
-      if (host === '[::1]') {
-        match.webSocketDebuggerUrl = match.webSocketDebuggerUrl
-          .replace('localhost', '::1')
-          .replace('127.0.0.1', '::1');
-      } else {
-        match.webSocketDebuggerUrl = match.webSocketDebuggerUrl
-          .replace('localhost', '127.0.0.1');
-      }
+      match.webSocketDebuggerUrl = match.webSocketDebuggerUrl
+        .replace('localhost', host)
+        .replace('127.0.0.1', host);
       return match;
     }
   }
@@ -36,19 +86,38 @@ export async function findClaudeExcelTarget(port = 9222): Promise<CdpTarget | nu
 }
 
 /**
+ * Checks CDP availability and returns a status.
+ */
+export async function checkCdpStatus(port = 9242, appExe?: string): Promise<'ready' | 'no-claude' | 'no-cdp'> {
+  const hosts = ['127.0.0.1', '[::1]'];
+  let anyReachable = false;
+
+  for (const host of hosts) {
+    const targets = await cdpHttpGet<CdpTarget[]>(port, '/json/list', host);
+    if (targets && targets.length > 0) {
+      anyReachable = true;
+    }
+  }
+
+  if (!anyReachable) return 'no-cdp';
+
+  const target = await findClaudeOfficeTarget(port, appExe);
+  return target ? 'ready' : 'no-claude';
+}
+
+/**
  * Checks whether the CDP debug port is available with a Claude target.
  */
-export async function isCdpAvailable(port = 9222): Promise<boolean> {
-  const target = await findClaudeExcelTarget(port);
-  return target !== null;
+export async function isCdpAvailable(port = 9242): Promise<boolean> {
+  return (await checkCdpStatus(port)) === 'ready';
 }
 
 /**
  * Connects to the Claude Excel WebView2 via CDP, expands all collapsed
  * tool pills, and scrapes the full conversation text from the DOM.
  */
-export async function scrapeExcelConversation(port = 9222, includeUserInput = false): Promise<string> {
-  const target = await findClaudeExcelTarget(port);
+export async function scrapeExcelConversation(port = 9242, includeUserInput = false, appExe?: string): Promise<string> {
+  const target = await findClaudeOfficeTarget(port, appExe);
   if (!target) {
     throw new Error(
       'Claude Excel add-in not found. Make sure:\n' +
