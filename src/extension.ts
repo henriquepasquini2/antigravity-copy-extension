@@ -60,6 +60,14 @@ export function activate(context: vscode.ExtensionContext) {
       'antigravity-copy-full.claudeExcelSetup',
       () => claudeExcelSetup(),
     ),
+    vscode.commands.registerCommand(
+      'antigravity-copy-full.claudePptCopy',
+      () => claudeExcelCopy(false),
+    ),
+    vscode.commands.registerCommand(
+      'antigravity-copy-full.claudePptCopyWithPrompts',
+      () => claudeExcelCopy(true),
+    ),
   );
 }
 

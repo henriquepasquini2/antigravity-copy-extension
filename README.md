@@ -13,7 +13,7 @@ This extension provides four integrations:
 - **Antigravity** — connects directly to the running language server and fetches the full conversation trajectory at **DEBUG verbosity**, which includes everything the standard UI omits.
 - **Claude Cowork** — reads the JSONL session files that Claude Desktop writes to disk, extracting extended thinking blocks, tool calls, and responses that the UI doesn't let you copy.
 - **Claude Code** — reads the JSONL session files from `~/.claude/projects/`, capturing the same extended thinking, tool calls, and responses from Claude Code CLI sessions.
-- **Claude Excel** — connects to the Excel add-in's WebView2 via Chrome DevTools Protocol, auto-expands all collapsed tool pills, and scrapes the full conversation including code blocks, parameters, and results.
+- **Claude Excel / PowerPoint** — connects to the Office add-in's WebView2 via Chrome DevTools Protocol, auto-expands all collapsed tool pills, and scrapes the full conversation including code blocks, parameters, and results.
 
 The output is a clean Markdown trace in chat order — no HTML, no metadata, no truncation.
 
@@ -30,10 +30,10 @@ The output is a clean Markdown trace in chat order — no HTML, no metadata, no 
 - **Complete tool trace** — Bash commands, file reads/writes/edits, web searches, web fetches, glob/grep searches, MCP tool calls, and more
 - **Todo lists** — TodoWrite calls rendered as checkbox lists
 
-### Claude Excel
+### Claude Excel & PowerPoint
 - **Auto-expand all pills** — "Used a tool", "Ran 3 scripts", "Fetched 5 pages", inner tool rows, "Show more", and "Result" toggles are all expanded automatically before copying
 - **Full tool content** — Office.js code blocks, tool parameters (JSON), tool results, search queries, and fetched pages
-- **One-time setup** — A single command sets the WebView2 debug port; after restarting Excel, it works forever
+- **One-time setup** — A single command sets the WebView2 debug port; after restarting Office, it works forever
 
 ### Shared
 - **Two copy modes** — Response-only (default) or with user prompts included
@@ -72,22 +72,22 @@ The output is a clean Markdown trace in chat order — no HTML, no metadata, no 
 4. Pick the session from the list (shows first prompt, model, and size)
 5. Done — the full Markdown is on your clipboard
 
-### Claude Excel
+### Claude Excel & PowerPoint
 
-#### First-time setup (once per machine)
+#### First-time setup (once per machine, applies to both)
 
 1. Open the Command Palette (`Ctrl+Shift+P`)
 2. Run **Claude Excel: Setup Debug Port** — this sets a user environment variable to enable the WebView2 debug port
-3. **Close and reopen Excel**, then open the Claude add-in
+3. **Close and reopen Excel/PowerPoint**, then open the Claude add-in
 4. That's it — the setup persists across reboots
 
 #### Copying conversations
 
-1. Use **Claude** inside Excel with the add-in open
+1. Use **Claude** inside Excel or PowerPoint with the add-in open
 2. Open the Command Palette (`Ctrl+Shift+P`)
 3. Run one of:
-   - **Claude Excel: Copy Full Session** — all tool content, code, and responses
-   - **Claude Excel: Copy Full Session with Prompts** — same, plus user messages with `## User` / `## Assistant` headers
+   - **Claude Excel: Copy Full Session** or **Claude PowerPoint: Copy Full Session**
+   - **Claude Excel: Copy Full Session with Prompts** or **Claude PowerPoint: Copy Full Session with Prompts**
 4. Done — the full Markdown is on your clipboard
 
 > **Note:** The extension auto-expands all collapsed pills before scraping, so you get the complete content even if you haven't manually expanded anything.
@@ -153,7 +153,7 @@ I'm currently focused on the hero section...
 - **Antigravity** must be running with an active session (for Antigravity commands)
 - **Claude Desktop** must have been used in Cowork mode (for Cowork commands)
 - **Claude Code** CLI must have been used at least once (for Code commands)
-- **Excel** with the Claude add-in open + one-time debug port setup (for Excel commands, Windows only)
+- **Excel or PowerPoint** with the Claude add-in open + one-time debug port setup (for Office commands, Windows only)
 - Works on **Windows**, **macOS**, and **Linux** (Excel scraping is Windows-only)
 - No API keys or configuration needed
 

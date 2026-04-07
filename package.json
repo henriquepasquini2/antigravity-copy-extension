@@ -1,8 +1,8 @@
 {
   "name": "antigravity-copy-full",
   "displayName": "Antigravity Copy Full Conversation",
-  "description": "Copy Antigravity, Claude Cowork, Claude Code, and Claude Excel conversations including the full thought process, extended thinking, and reasoning to clipboard as Markdown",
-  "version": "1.7.0",
+  "description": "Copy Antigravity, Claude Cowork, Claude Code, Claude Excel, and Claude PowerPoint conversations including the full thought process, extended thinking, and reasoning to clipboard as Markdown",
+  "version": "1.8.0",
   "publisher": "henriquepasquini2",
   "license": "MIT",
   "icon": "images/icon.png",
@@ -48,7 +48,9 @@
     "onCommand:antigravity-copy-full.claudeCodeDumpSession",
     "onCommand:antigravity-copy-full.claudeExcelCopy",
     "onCommand:antigravity-copy-full.claudeExcelCopyWithPrompts",
-    "onCommand:antigravity-copy-full.claudeExcelSetup"
+    "onCommand:antigravity-copy-full.claudeExcelSetup",
+    "onCommand:antigravity-copy-full.claudePptCopy",
+    "onCommand:antigravity-copy-full.claudePptCopyWithPrompts"
   ],
   "main": "./out/extension.js",
   "contributes": {
@@ -112,6 +114,16 @@
         "command": "antigravity-copy-full.claudeExcelSetup",
         "title": "Setup Debug Port",
         "category": "Claude Excel"
+      },
+      {
+        "command": "antigravity-copy-full.claudePptCopy",
+        "title": "Copy Full Session",
+        "category": "Claude PowerPoint"
+      },
+      {
+        "command": "antigravity-copy-full.claudePptCopyWithPrompts",
+        "title": "Copy Full Session with Prompts",
+        "category": "Claude PowerPoint"
       }
     ],
     "keybindings": [

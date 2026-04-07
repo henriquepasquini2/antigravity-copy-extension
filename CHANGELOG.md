@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.8.0] - 2026-04-05
+
+### Added
+- **Claude PowerPoint session support** — same scraping approach as Excel, reusing the same CDP connection to `pivot.claude.ai`.
+- Two new commands under the **Claude PowerPoint** category:
+  - **Claude PowerPoint: Copy Full Session** — copies the assistant's response with all tool content expanded.
+  - **Claude PowerPoint: Copy Full Session with Prompts** — same, plus user messages with `## User` / `## Assistant` headers.
+- Uses the same one-time debug port setup as Excel (the `Claude Excel: Setup Debug Port` command applies to all Office WebView2 instances).
+
 ## [1.7.0] - 2026-04-05
 
 ### Added
