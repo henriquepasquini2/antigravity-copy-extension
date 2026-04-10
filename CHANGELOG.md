@@ -1,6 +1,6 @@
 # Changelog
 
-## [1.8.1] - 2026-04-10
+## [1.8.2] - 2026-04-10
 
 ### Fixed
 - **Claude Code: tool results with array content were silently dropped** — Claude Code stores many tool results (MCP snapshots, preview outputs, search results, file contents) as arrays of content blocks instead of plain strings. The formatter now extracts text from both formats, so copied sessions include the full tool output.
