@@ -1,5 +1,5 @@
 /**
- * Formats Claude Cowork JSONL session messages as clean Markdown.
+ * Formats Claude Cowork / Claude Code JSONL session messages as clean Markdown.
  *
  * JSONL message schema (one JSON object per line):
  *   type: "user" | "assistant"
@@ -10,10 +10,13 @@
  *   timestamp: ISO 8601
  *
  * ContentBlock variants:
- *   { type: "thinking",    thinking: string }
- *   { type: "text",        text: string }
- *   { type: "tool_use",    name: string, input: object }
- *   { type: "tool_result", tool_use_id: string, content: string }
+ *   { type: "thinking",         thinking: string }
+ *   { type: "redacted_thinking" }
+ *   { type: "text",             text: string }
+ *   { type: "tool_use",         name: string, input: object }
+ *   { type: "tool_result",      tool_use_id: string, content: string | ContentBlock[] }
+ *   { type: "server_tool_use",  name: string, input: object }
+ *   { type: "server_tool_result", content: string | ContentBlock[] }
  */
 
 export function formatClaudeSession(
@@ -50,13 +53,22 @@ function emitUserMessage(msg: any, lines: string[], includeUserInput: boolean): 
 
   if (!Array.isArray(content)) return;
 
+  let hasUserText = false;
+
   for (const block of content) {
     if (block.type === 'tool_result') {
       emitToolResult(block, lines);
-    } else if (block.type === 'text' && !msg.isMeta) {
-      // Injected context (skill instructions, etc.) — skip unless it's
-      // a genuine follow-up from the user (non-meta, non-tool-result).
-      // These are typically system injections after tool_result; skip them.
+    } else if (block.type === 'text' && includeUserInput && !msg.isMeta) {
+      const text = block.text?.trim();
+      if (text) {
+        if (!hasUserText) {
+          lines.push('## User');
+          lines.push('');
+          hasUserText = true;
+        }
+        lines.push(text);
+        lines.push('');
+      }
     }
   }
 }
@@ -70,11 +82,21 @@ function emitAssistantMessage(msg: any, lines: string[]): void {
       case 'thinking':
         emitThinking(block, lines);
         break;
+      case 'redacted_thinking':
+        lines.push('[redacted thinking]');
+        lines.push('');
+        break;
       case 'text':
         emitText(block, lines);
         break;
       case 'tool_use':
         emitToolUse(block, lines);
+        break;
+      case 'server_tool_use':
+        emitServerToolUse(block, lines);
+        break;
+      case 'server_tool_result':
+        emitToolResultContent(block.content, lines);
         break;
     }
   }
@@ -161,13 +183,51 @@ function emitTodoWrite(input: any, lines: string[]): void {
   lines.push('');
 }
 
-function emitToolResult(block: any, lines: string[]): void {
-  const content = block.content;
-  if (!content || typeof content !== 'string') return;
-
-  const trimmed = content.trim();
-  if (!trimmed) return;
-
-  lines.push(trimmed);
+function emitServerToolUse(block: any, lines: string[]): void {
+  const name: string = block.name || 'unknown';
+  if (name === 'web_search' || name === 'brave_search') {
+    lines.push(`Searched web: "${block.input?.query || '?'}"`);
+  } else {
+    lines.push(`Server tool: ${name}`);
+  }
   lines.push('');
+}
+
+/**
+ * Extracts text from tool_result content, which can be a string or an array
+ * of content blocks like [{type: "text", text: "..."}, {type: "image", ...}].
+ */
+function emitToolResultContent(content: any, lines: string[]): void {
+  if (!content) return;
+
+  if (typeof content === 'string') {
+    const trimmed = content.trim();
+    if (trimmed) {
+      lines.push(trimmed);
+      lines.push('');
+    }
+    return;
+  }
+
+  if (Array.isArray(content)) {
+    for (const item of content) {
+      if (typeof item === 'string') {
+        const trimmed = item.trim();
+        if (trimmed) {
+          lines.push(trimmed);
+          lines.push('');
+        }
+      } else if (item?.type === 'text' && typeof item.text === 'string') {
+        const trimmed = item.text.trim();
+        if (trimmed) {
+          lines.push(trimmed);
+          lines.push('');
+        }
+      }
+    }
+  }
+}
+
+function emitToolResult(block: any, lines: string[]): void {
+  emitToolResultContent(block.content, lines);
 }

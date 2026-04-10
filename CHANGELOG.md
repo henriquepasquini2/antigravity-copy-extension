@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.8.1] - 2026-04-10
+
+### Fixed
+- **Claude Code: tool results with array content were silently dropped** — Claude Code stores many tool results (MCP snapshots, preview outputs, search results, file contents) as arrays of content blocks instead of plain strings. The formatter now extracts text from both formats, so copied sessions include the full tool output.
+- User follow-up text blocks in multi-turn conversations are now included when using "Copy Full Session with Prompts" (previously only the first string-type message was captured; array-content messages with interleaved `tool_result` and `text` blocks dropped the user text).
+
+### Added
+- `server_tool_use` / `server_tool_result` block handling — server-side tools like web search now appear in copied sessions.
+- `redacted_thinking` blocks now emit a `[redacted thinking]` placeholder instead of being silently skipped.
+
 ## [1.8.0] - 2026-04-05
 
 ### Added
