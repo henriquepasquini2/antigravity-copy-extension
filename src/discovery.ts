@@ -42,6 +42,36 @@ export async function discoverLanguageServer(workspaceFolderPath?: string): Prom
   );
 }
 
+/**
+ * Discovers ALL running language server instances. Returns every LS that
+ * can be successfully connected to, so the caller can aggregate
+ * conversations from multiple Antigravity windows.
+ */
+export async function discoverAllLanguageServers(workspaceFolderPath?: string): Promise<LanguageServerInfo[]> {
+  const allProcesses = await findAllLanguageServerProcesses();
+  const certPath = findCertPath();
+
+  const ranked = rankProcessesByWorkspace(allProcesses, workspaceFolderPath);
+
+  const results: LanguageServerInfo[] = [];
+  for (const proc of ranked) {
+    try {
+      results.push(await buildLsInfo(proc, certPath));
+    } catch {
+      // skip processes that can't be connected to
+    }
+  }
+
+  if (results.length === 0) {
+    throw new Error(
+      'Could not find any Antigravity language server processes. ' +
+      'Make sure Antigravity is running with an active chat session.'
+    );
+  }
+
+  return results;
+}
+
 async function buildLsInfo(proc: ProcessInfo, certPath: string): Promise<LanguageServerInfo> {
   const csrfToken = extractArg(proc.commandLine, '--csrf_token');
   const workspaceId = extractArg(proc.commandLine, '--workspace_id');

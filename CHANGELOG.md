@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.8.4] - 2026-04-15
+
+### Added
+- **Antigravity: Show Session Execution Time and Tokens** — modal summary of wall-clock span (from step timestamps) and summed input/output tokens from trajectory metadata.
+- **Claude Cowork: Show Session Execution Time and Tokens** — same idea from JSONL message timestamps and assistant `usage` fields.
+- **Claude Code: Show Session Execution Time and Tokens** — same as Cowork (shared analyzer).
+
+### Changed
+- **Antigravity copy / dump / execution-time** — discovers every running language server, merges `GetAllCascadeTrajectories` results from all of them into one picker (deduped by conversation id), and fetches each selected chat from the correct server. Fixes missing chats when multiple Antigravity windows are open.
+- **Language server discovery** — listing conversations re-discovers processes each time instead of reusing a single cached server (so new windows are picked up).
+
+### Documentation
+- README updated for multi-window Antigravity, the three session stats commands, and how Claude JSONL tool results are formatted.
+
 ## [1.8.2] - 2026-04-10
 
 ### Fixed

@@ -2,7 +2,7 @@
   "name": "antigravity-copy-full",
   "displayName": "Antigravity Copy Full Conversation",
   "description": "Copy Antigravity, Claude Cowork, Claude Code, Claude Excel, and Claude PowerPoint conversations including the full thought process, extended thinking, and reasoning to clipboard as Markdown",
-  "version": "1.8.2",
+  "version": "1.8.4",
   "publisher": "henriquepasquini2",
   "license": "MIT",
   "icon": "images/icon.png",
@@ -40,12 +40,15 @@
     "onCommand:antigravity-copy-full.copyConversation",
     "onCommand:antigravity-copy-full.copyConversationWithPrompts",
     "onCommand:antigravity-copy-full.dumpTrajectory",
+    "onCommand:antigravity-copy-full.antigravityExecutionTime",
     "onCommand:antigravity-copy-full.claudeCopySession",
     "onCommand:antigravity-copy-full.claudeCopySessionWithPrompts",
     "onCommand:antigravity-copy-full.claudeDumpSession",
+    "onCommand:antigravity-copy-full.claudeExecutionTime",
     "onCommand:antigravity-copy-full.claudeCodeCopySession",
     "onCommand:antigravity-copy-full.claudeCodeCopySessionWithPrompts",
     "onCommand:antigravity-copy-full.claudeCodeDumpSession",
+    "onCommand:antigravity-copy-full.claudeCodeExecutionTime",
     "onCommand:antigravity-copy-full.claudeExcelCopy",
     "onCommand:antigravity-copy-full.claudeExcelCopyWithPrompts",
     "onCommand:antigravity-copy-full.claudeExcelSetup",
@@ -71,6 +74,11 @@
         "category": "Antigravity"
       },
       {
+        "command": "antigravity-copy-full.antigravityExecutionTime",
+        "title": "Show Session Execution Time and Tokens",
+        "category": "Antigravity"
+      },
+      {
         "command": "antigravity-copy-full.claudeCopySession",
         "title": "Copy Full Session",
         "category": "Claude Cowork"
@@ -86,6 +94,11 @@
         "category": "Claude Cowork"
       },
       {
+        "command": "antigravity-copy-full.claudeExecutionTime",
+        "title": "Show Session Execution Time and Tokens",
+        "category": "Claude Cowork"
+      },
+      {
         "command": "antigravity-copy-full.claudeCodeCopySession",
         "title": "Copy Full Session",
         "category": "Claude Code"
@@ -98,6 +111,11 @@
       {
         "command": "antigravity-copy-full.claudeCodeDumpSession",
         "title": "Dump Raw Session (Debug)",
+        "category": "Claude Code"
+      },
+      {
+        "command": "antigravity-copy-full.claudeCodeExecutionTime",
+        "title": "Show Session Execution Time and Tokens",
         "category": "Claude Code"
       },
       {

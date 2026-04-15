@@ -24,11 +24,14 @@ The output is a clean Markdown trace in chat order — no HTML, no metadata, no 
 - **Complete tool trace** — Web searches (with full results), directory listings, file views, command executions with output, code edits, image generation prompts, grep searches, browser actions, and more
 - **All 18+ step types** — `SEARCH_WEB`, `RUN_COMMAND`, `COMMAND_STATUS`, `LIST_DIRECTORY`, `VIEW_FILE`, `CODE_ACTION`, `GENERATE_IMAGE`, `GREP_SEARCH`, `BROWSER_SUBAGENT`, `NOTIFY_USER`, `ERROR_MESSAGE`, `READ_RESOURCE`, and others
 - **Full assistant responses** — The actual AI text response, not just tool call summaries
+- **Multiple windows** — If several Antigravity windows are open, copy and dump commands discover every running language server, merge all conversations into one picker (newest first), and fetch each chat from the correct server
+- **Session stats** — **Show Session Execution Time and Tokens** estimates wall-clock span from step timestamps and sums reported input/output tokens (modal dialog)
 
 ### Claude Cowork & Claude Code
 - **Extended thinking blocks** — Full reasoning from Claude's extended thinking
-- **Complete tool trace** — Bash commands, file reads/writes/edits, web searches, web fetches, glob/grep searches, MCP tool calls, and more
+- **Complete tool trace** — Bash commands, file reads/writes/edits, web searches, web fetches, glob/grep searches, MCP tool calls, and more (including tool results stored as text blocks or arrays, e.g. MCP previews and file read output)
 - **Todo lists** — TodoWrite calls rendered as checkbox lists
+- **Session stats** — **Show Session Execution Time and Tokens** uses JSONL message timestamps and per-assistant `usage` fields when present
 
 ### Claude Excel & PowerPoint
 - **Auto-expand all pills** — "Used a tool", "Ran 3 scripts", "Fetched 5 pages", inner tool rows, "Show more", and "Result" toggles are all expanded automatically before copying
@@ -44,13 +47,14 @@ The output is a clean Markdown trace in chat order — no HTML, no metadata, no 
 
 ### Antigravity
 
-1. Make sure **Antigravity is running** with at least one chat conversation
+1. Make sure **Antigravity is running** with at least one chat conversation (any number of windows is fine)
 2. Open the Command Palette (`Ctrl+Shift+P`)
 3. Run one of:
    - **Antigravity: Copy Full Conversation** — AI response only (thoughts, tools, output)
    - **Antigravity: Copy Full Conversation with Prompts** — Same, but also includes user messages
+   - **Antigravity: Show Session Execution Time and Tokens** — Wall-clock span and token totals for the selected conversation (from trajectory metadata)
 4. Pick the conversation from the list
-5. Done — the full Markdown is on your clipboard
+5. Done — copy/dump puts Markdown on the clipboard; execution time shows a modal summary
 
 ### Claude Cowork
 
@@ -59,8 +63,9 @@ The output is a clean Markdown trace in chat order — no HTML, no metadata, no 
 3. Run one of:
    - **Claude Cowork: Copy Full Session** — Extended thinking, tools, and responses
    - **Claude Cowork: Copy Full Session with Prompts** — Same, plus user messages
+   - **Claude Cowork: Show Session Execution Time and Tokens** — Duration and token totals from the session JSONL
 4. Pick the session from the list (shows first prompt, model, and size)
-5. Done — the full Markdown is on your clipboard
+5. Done — copy puts Markdown on the clipboard; execution time shows a modal summary
 
 ### Claude Code
 
@@ -69,8 +74,9 @@ The output is a clean Markdown trace in chat order — no HTML, no metadata, no 
 3. Run one of:
    - **Claude Code: Copy Full Session** — Extended thinking, tools, and responses
    - **Claude Code: Copy Full Session with Prompts** — Same, plus user messages
+   - **Claude Code: Show Session Execution Time and Tokens** — Duration and token totals from the session JSONL
 4. Pick the session from the list (shows first prompt, model, and size)
-5. Done — the full Markdown is on your clipboard
+5. Done — copy puts Markdown on the clipboard; execution time shows a modal summary
 
 ### Claude Excel & PowerPoint
 
@@ -161,27 +167,28 @@ I'm currently focused on the hero section...
 
 ### Antigravity
 
-1. Finds the `language_server` process and extracts the CSRF token + HTTPS port from its command line
+1. Finds **all** `language_server` processes, ranks them by workspace match when possible, and tries to connect to each
 2. Loads the self-signed certificate from the Antigravity installation
-3. Connects via **ConnectRPC** (HTTP/2 + JSON) to the language server
-4. Calls `GetCascadeTrajectory` with `trajectoryVerbosity: DEBUG` to fetch the full trace including thoughts
-5. Formats everything as clean Markdown and copies to clipboard
+3. For each reachable server, connects via **ConnectRPC** (HTTP/2 + JSON) and calls `GetAllCascadeTrajectories`
+4. Merges trajectory summaries into one list (deduplicated by conversation id), sorted by recency; each picker item remembers which server owns that chat
+5. On your selection, calls `GetCascadeTrajectory` with `trajectoryVerbosity: DEBUG` on **that** server's client
+6. Formats everything as clean Markdown and copies to clipboard (or analyzes step metadata for execution time / tokens)
 
 ### Claude Cowork
 
 1. Scans Claude Desktop's local data directory for JSONL session files (handles MSIX and standard Windows paths, macOS, Linux)
 2. Parses each session file to extract first prompt, model, and timestamps for the picker
 3. On selection, reads all messages from the JSONL file
-4. Extracts thinking blocks, text responses, tool calls, and tool results
-5. Formats everything as clean Markdown and copies to clipboard
+4. Extracts thinking blocks, text responses, tool calls, and tool results (string or structured array content)
+5. Formats everything as clean Markdown and copies to clipboard (or aggregates timestamps and `usage` for stats)
 
 ### Claude Code
 
 1. Scans `~/.claude/projects/` for JSONL session files and enriches with metadata from `~/.claude/sessions/` index
 2. Parses each session file to extract first prompt, model, and timestamps for the picker
 3. On selection, reads all messages from the JSONL file
-4. Extracts thinking blocks, text responses, tool calls, and tool results
-5. Formats everything as clean Markdown and copies to clipboard
+4. Extracts thinking blocks, text responses, tool calls, and tool results (string or structured array content)
+5. Formats everything as clean Markdown and copies to clipboard (or aggregates timestamps and `usage` for stats)
 
 ### Claude Excel & PowerPoint
 

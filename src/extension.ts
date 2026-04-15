@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
-import { discoverLanguageServer, LanguageServerInfo } from './discovery';
+import { discoverLanguageServer, discoverAllLanguageServers, LanguageServerInfo } from './discovery';
 import { AntigravityLsClient, CascadeSummary } from './lsClient';
 import { formatTrajectoryClean } from './formatter';
 import { discoverClaudeSessions, discoverClaudeCodeSessions, readSessionMessages, ClaudeSession } from './claude/sessionDiscovery';
@@ -25,6 +25,10 @@ export function activate(context: vscode.ExtensionContext) {
       () => dumpTrajectory(),
     ),
     vscode.commands.registerCommand(
+      'antigravity-copy-full.antigravityExecutionTime',
+      () => antigravityExecutionTime(),
+    ),
+    vscode.commands.registerCommand(
       'antigravity-copy-full.claudeCopySession',
       () => claudeCopySession(false),
     ),
@@ -37,6 +41,10 @@ export function activate(context: vscode.ExtensionContext) {
       () => claudeDumpSession(),
     ),
     vscode.commands.registerCommand(
+      'antigravity-copy-full.claudeExecutionTime',
+      () => claudeExecutionTime(),
+    ),
+    vscode.commands.registerCommand(
       'antigravity-copy-full.claudeCodeCopySession',
       () => claudeCodeCopySession(false),
     ),
@@ -47,6 +55,10 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.commands.registerCommand(
       'antigravity-copy-full.claudeCodeDumpSession',
       () => claudeCodeDumpSession(),
+    ),
+    vscode.commands.registerCommand(
+      'antigravity-copy-full.claudeCodeExecutionTime',
+      () => claudeCodeExecutionTime(),
     ),
     vscode.commands.registerCommand(
       'antigravity-copy-full.claudeExcelCopy',
@@ -77,19 +89,8 @@ export function deactivate() {
 
 async function copyConversation(includePrompts: boolean) {
   try {
-    const lsInfo = await discoverWithProgress();
-    if (!lsInfo) return;
-
-    const client = new AntigravityLsClient(lsInfo);
-
-    const items = await vscode.window.withProgress(
-      {
-        location: vscode.ProgressLocation.Notification,
-        title: 'Loading conversations...',
-        cancellable: false,
-      },
-      async () => buildConversationItems(client),
-    );
+    const items = await discoverAndBuildConversationItems();
+    if (!items) return;
 
     if (items.length === 0) {
       vscode.window.showWarningMessage('No Antigravity conversations found in the current session.');
@@ -118,7 +119,7 @@ async function copyConversation(includePrompts: boolean) {
       async (progress) => {
         progress.report({ message: 'Retrieving full trace with thoughts...' });
 
-        const trajectory = await client.getCascadeTrajectory(selected.conversationId, 1);
+        const trajectory = await selected.client.getCascadeTrajectory(selected.conversationId, 1);
         const markdown = formatTrajectoryClean(trajectory, includePrompts);
 
         await vscode.env.clipboard.writeText(markdown);
@@ -136,19 +137,8 @@ async function copyConversation(includePrompts: boolean) {
 
 async function dumpTrajectory() {
   try {
-    const lsInfo = await discoverWithProgress();
-    if (!lsInfo) return;
-
-    const client = new AntigravityLsClient(lsInfo);
-
-    const items = await vscode.window.withProgress(
-      {
-        location: vscode.ProgressLocation.Notification,
-        title: 'Loading conversations...',
-        cancellable: false,
-      },
-      async () => buildConversationItems(client),
-    );
+    const items = await discoverAndBuildConversationItems();
+    if (!items) return;
 
     if (items.length === 0) {
       vscode.window.showWarningMessage('No Antigravity conversations found.');
@@ -171,7 +161,7 @@ async function dumpTrajectory() {
         cancellable: false,
       },
       async () => {
-        const trajectory = await client.getCascadeTrajectory(selected.conversationId, 1);
+        const trajectory = await selected.client.getCascadeTrajectory(selected.conversationId, 1);
         const json = JSON.stringify(trajectory, null, 2);
 
         const defaultName = `trajectory-${selected.conversationId.substring(0, 8)}.json`;
@@ -202,6 +192,85 @@ async function dumpTrajectory() {
     );
   } catch (err: any) {
     vscode.window.showErrorMessage(`Antigravity Dump: ${err?.message || String(err)}`);
+  }
+}
+
+async function antigravityExecutionTime() {
+  try {
+    const items = await discoverAndBuildConversationItems();
+    if (!items) return;
+
+    if (items.length === 0) {
+      vscode.window.showWarningMessage('No Antigravity conversations found.');
+      return;
+    }
+
+    const selected = await vscode.window.showQuickPick(items, {
+      placeHolder: 'Select a conversation to analyze',
+      title: 'Antigravity: Show Session Execution Time and Tokens',
+      matchOnDescription: true,
+      matchOnDetail: true,
+    });
+
+    if (!selected) return;
+
+    await vscode.window.withProgress(
+      {
+        location: vscode.ProgressLocation.Notification,
+        title: 'Analyzing trajectory...',
+        cancellable: false,
+      },
+      async () => {
+        const trajectory = await selected.client.getCascadeTrajectory(selected.conversationId, 1);
+        const steps = trajectory?.trajectory?.steps || [];
+        
+        let firstTime = 0;
+        let lastTime = 0;
+        let inputTokens = 0;
+        let outputTokens = 0;
+
+        for (const step of steps) {
+          const meta = step.metadata;
+          if (meta) {
+            if (meta.createdAt) {
+              const t = new Date(meta.createdAt).getTime();
+              if (!firstTime || t < firstTime) firstTime = t;
+              if (!lastTime || t > lastTime) lastTime = t;
+            }
+            if (meta.startedAt) {
+              const t = new Date(meta.startedAt).getTime();
+               if (!firstTime || t < firstTime) firstTime = t;
+               if (!lastTime || t > lastTime) lastTime = t;
+            }
+            if (meta.completedAt) {
+              const t = new Date(meta.completedAt).getTime();
+               if (!firstTime || t < firstTime) firstTime = t;
+               if (!lastTime || t > lastTime) lastTime = t;
+            }
+            
+            if (meta.modelUsage) {
+                inputTokens += parseInt(meta.modelUsage.inputTokens || '0', 10);
+                outputTokens += parseInt(meta.modelUsage.outputTokens || '0', 10);
+            }
+          }
+        }
+
+        if (!firstTime || !lastTime || firstTime === lastTime) {
+            vscode.window.showInformationMessage('Could not calculate duration from timestamps in this trajectory.');
+            return;
+        }
+
+        const durationMs = lastTime - firstTime;
+        const durationStr = formatDuration(durationMs);
+
+        vscode.window.showInformationMessage(
+          `Total execution time: ${durationStr}\nTotal Input Tokens: ${inputTokens}\nTotal Output Tokens: ${outputTokens}`,
+          { modal: true }
+        );
+      }
+    );
+  } catch (err: any) {
+    vscode.window.showErrorMessage(`Antigravity Execution Time: ${err?.message || String(err)}`);
   }
 }
 
@@ -288,6 +357,16 @@ async function claudeDumpSession() {
     vscode.window.showErrorMessage(
       `Claude Dump: ${err?.message || String(err)}`
     );
+  }
+}
+
+async function claudeExecutionTime() {
+  try {
+    const session = await pickClaudeSession('Claude Cowork: Show Session Execution Time and Tokens');
+    if (!session) return;
+    await analyzeClaudeSessionTimeAndTokens(session, 'Claude Cowork Execution Time');
+  } catch (err: any) {
+    vscode.window.showErrorMessage(`Claude Cowork Execution Time: ${err?.message || String(err)}`);
   }
 }
 
@@ -425,6 +504,80 @@ async function claudeCodeDumpSession() {
       `Claude Code Dump: ${err?.message || String(err)}`
     );
   }
+}
+
+async function analyzeClaudeSessionTimeAndTokens(session: ClaudeSession, title: string) {
+  await vscode.window.withProgress(
+    {
+      location: vscode.ProgressLocation.Notification,
+      title: 'Calculating execution time and tokens...',
+      cancellable: false,
+    },
+    async () => {
+      const messages = readSessionMessages(session.filePath);
+      if (messages.length === 0) {
+        vscode.window.showInformationMessage('Session has no messages.');
+        return;
+      }
+
+      let firstTime = 0;
+      let lastTime = 0;
+      let inputTokens = 0;
+      let outputTokens = 0;
+
+      for (const msg of messages) {
+          if (msg.timestamp) {
+              const t = new Date(msg.timestamp).getTime();
+              if (!firstTime || t < firstTime) firstTime = t;
+              if (!lastTime || t > lastTime) lastTime = t;
+          }
+          if (msg.type === 'assistant') {
+              const usage = msg.message?.usage || msg.usage;
+              if (usage) {
+                  inputTokens += usage.input_tokens || 0;
+                  outputTokens += usage.output_tokens || 0;
+              }
+          }
+      }
+
+      if (!firstTime || !lastTime || firstTime === lastTime) {
+          vscode.window.showInformationMessage('Could not calculate duration from timestamps in this session.');
+          return;
+      }
+
+      const durationMs = lastTime - firstTime;
+      const durationStr = formatDuration(durationMs);
+
+      vscode.window.showInformationMessage(
+        `Total execution time: ${durationStr}\nTotal Input Tokens: ${inputTokens}\nTotal Output Tokens: ${outputTokens}`,
+        { modal: true }
+      );
+    },
+  );
+}
+
+async function claudeCodeExecutionTime() {
+  try {
+    const session = await pickClaudeCodeSession('Claude Code: Show Session Execution Time and Tokens');
+    if (!session) return;
+    await analyzeClaudeSessionTimeAndTokens(session, 'Claude Code Execution Time');
+  } catch (err: any) {
+    vscode.window.showErrorMessage(
+      `Claude Code Execution Time: ${err?.message || String(err)}`
+    );
+  }
+}
+
+function formatDuration(ms: number): string {
+  if (ms < 1000) return `${ms}ms`;
+  const sec = Math.floor(ms / 1000);
+  if (sec < 60) return `${sec}s`;
+  const min = Math.floor(sec / 60);
+  const remainingSec = sec % 60;
+  if (min < 60) return `${min}m ${remainingSec}s`;
+  const hr = Math.floor(min / 60);
+  const remainingMin = min % 60;
+  return `${hr}h ${remainingMin}m ${remainingSec}s`;
 }
 
 async function pickClaudeCodeSession(title: string): Promise<ClaudeSession | undefined> {
@@ -574,8 +727,8 @@ async function claudeExcelSetup() {
 // ---------------------------------------------------------------------------
 
 async function discoverWithProgress(): Promise<LanguageServerInfo | null> {
-  if (cachedLsInfo) return cachedLsInfo;
-
+  // Always re-discover to pick up new language server processes
+  // (e.g. when user opens a new Antigravity chat window).
   return vscode.window.withProgress(
     {
       location: vscode.ProgressLocation.Notification,
@@ -593,36 +746,88 @@ async function discoverWithProgress(): Promise<LanguageServerInfo | null> {
 
 interface ConversationPickItem extends vscode.QuickPickItem {
   conversationId: string;
+  client: AntigravityLsClient;
 }
 
-async function buildConversationItems(client: AntigravityLsClient): Promise<ConversationPickItem[]> {
-  const summaries = await client.getAllCascadeTrajectories();
-  const entries = Object.entries(summaries);
+/**
+ * Discovers all running language servers and builds a merged list of
+ * conversations from all of them. Shows a single progress notification.
+ */
+async function discoverAndBuildConversationItems(): Promise<ConversationPickItem[] | null> {
+  return vscode.window.withProgress(
+    {
+      location: vscode.ProgressLocation.Notification,
+      title: 'Finding Antigravity conversations...',
+      cancellable: false,
+    },
+    async () => {
+      const workspacePath = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+      const allServers = await discoverAllLanguageServers(workspacePath);
 
-  entries.sort((a, b) => {
-    const tA = new Date(a[1].lastModifiedTime || a[1].createdTime).getTime();
-    const tB = new Date(b[1].lastModifiedTime || b[1].createdTime).getTime();
-    return tB - tA;
-  });
+      // Update cached info with the first (best-ranked) server for error handling
+      if (allServers.length > 0) {
+        cachedLsInfo = allServers[0];
+      }
 
-  return entries.map(([cascadeId, info]) => {
-    const modified = new Date(info.lastModifiedTime || info.createdTime);
-    const timeStr = formatRelativeTime(modified);
-    const label = info.summary
-      ? truncate(info.summary, 80)
-      : `Conversation ${cascadeId.substring(0, 8)}…`;
-    const steps = info.stepCount ? `${info.stepCount} steps` : '';
-    const workspace = extractWorkspaceName(info);
+      // Query all servers in parallel and merge results
+      const seen = new Set<string>();
+      const allItems: ConversationPickItem[] = [];
 
-    const detailParts = [`ID: ${cascadeId}`, steps, workspace].filter(Boolean);
+      const results = await Promise.allSettled(
+        allServers.map(async (info) => {
+          const client = new AntigravityLsClient(info);
+          const summaries = await client.getAllCascadeTrajectories();
+          return { client, summaries };
+        })
+      );
 
-    return {
-      label,
-      description: timeStr,
-      detail: detailParts.join(' · '),
-      conversationId: cascadeId,
-    };
-  });
+      for (const result of results) {
+        if (result.status !== 'fulfilled') continue;
+        const { client, summaries } = result.value;
+
+        for (const [cascadeId, info] of Object.entries(summaries)) {
+          if (seen.has(cascadeId)) continue;
+          seen.add(cascadeId);
+
+          const modified = new Date(info.lastModifiedTime || info.createdTime);
+          const timeStr = formatRelativeTime(modified);
+          const label = info.summary
+            ? truncate(info.summary, 80)
+            : `Conversation ${cascadeId.substring(0, 8)}…`;
+          const steps = info.stepCount ? `${info.stepCount} steps` : '';
+          const workspace = extractWorkspaceName(info);
+
+          const detailParts = [`ID: ${cascadeId}`, steps, workspace].filter(Boolean);
+
+          allItems.push({
+            label,
+            description: timeStr,
+            detail: detailParts.join(' · '),
+            conversationId: cascadeId,
+            client,
+          });
+        }
+      }
+
+      // Sort all items by most recent first
+      allItems.sort((a, b) => {
+        const parseTime = (item: ConversationPickItem) => {
+          const desc = item.description || '';
+          if (desc === 'just now') return Date.now();
+          const mMatch = desc.match(/(\d+)m ago/);
+          if (mMatch) return Date.now() - parseInt(mMatch[1]) * 60000;
+          const hMatch = desc.match(/(\d+)h ago/);
+          if (hMatch) return Date.now() - parseInt(hMatch[1]) * 3600000;
+          const dMatch = desc.match(/(\d+)d ago/);
+          if (dMatch) return Date.now() - parseInt(dMatch[1]) * 86400000;
+          return 0;
+        };
+        return parseTime(b) - parseTime(a);
+      });
+
+      return allItems;
+    }
+  );
 }
 
 function extractWorkspaceName(info: CascadeSummary): string {
