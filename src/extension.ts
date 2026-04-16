@@ -247,7 +247,7 @@ async function antigravityExecutionTime() {
                if (!firstTime || t < firstTime) firstTime = t;
                if (!lastTime || t > lastTime) lastTime = t;
             }
-            
+
             if (meta.modelUsage) {
                 inputTokens += parseInt(meta.modelUsage.inputTokens || '0', 10);
                 outputTokens += parseInt(meta.modelUsage.outputTokens || '0', 10);
@@ -514,8 +514,17 @@ async function analyzeClaudeSessionTimeAndTokens(session: ClaudeSession, title: 
       cancellable: false,
     },
     async () => {
-      const messages = readSessionMessages(session.filePath);
-      if (messages.length === 0) {
+      // Read ALL lines from the JSONL (including queue-operation, last-prompt)
+      // so we don't miss any timestamps for the duration calculation.
+      const fs = require('fs') as typeof import('fs');
+      const raw = fs.readFileSync(session.filePath, 'utf-8');
+      const allLines: any[] = [];
+      for (const line of raw.split('\n')) {
+        if (!line.trim()) continue;
+        try { allLines.push(JSON.parse(line)); } catch { /* skip */ }
+      }
+
+      if (allLines.length === 0) {
         vscode.window.showInformationMessage('Session has no messages.');
         return;
       }
@@ -525,7 +534,7 @@ async function analyzeClaudeSessionTimeAndTokens(session: ClaudeSession, title: 
       let inputTokens = 0;
       let outputTokens = 0;
 
-      for (const msg of messages) {
+      for (const msg of allLines) {
           if (msg.timestamp) {
               const t = new Date(msg.timestamp).getTime();
               if (!firstTime || t < firstTime) firstTime = t;
@@ -569,15 +578,18 @@ async function claudeCodeExecutionTime() {
 }
 
 function formatDuration(ms: number): string {
-  if (ms < 1000) return `${ms}ms`;
+  const decimalMins = (ms / 60000).toFixed(2);
+  const suffix = ` (${decimalMins} minutes)`;
+
+  if (ms < 1000) return `${ms}ms${suffix}`;
   const sec = Math.floor(ms / 1000);
-  if (sec < 60) return `${sec}s`;
+  if (sec < 60) return `${sec}s${suffix}`;
   const min = Math.floor(sec / 60);
   const remainingSec = sec % 60;
-  if (min < 60) return `${min}m ${remainingSec}s`;
+  if (min < 60) return `${min}m ${remainingSec}s${suffix}`;
   const hr = Math.floor(min / 60);
   const remainingMin = min % 60;
-  return `${hr}h ${remainingMin}m ${remainingSec}s`;
+  return `${hr}h ${remainingMin}m ${remainingSec}s${suffix}`;
 }
 
 async function pickClaudeCodeSession(title: string): Promise<ClaudeSession | undefined> {

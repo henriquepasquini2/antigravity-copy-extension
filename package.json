@@ -1,8 +1,8 @@
 {
   "name": "antigravity-copy-full",
-  "displayName": "Antigravity Copy Full Conversation",
-  "description": "Copy Antigravity, Claude Cowork, Claude Code, Claude Excel, and Claude PowerPoint conversations including the full thought process, extended thinking, and reasoning to clipboard as Markdown",
-  "version": "1.8.4",
+  "displayName": "Antigravity - Copy Full Trajectory",
+  "description": "Extracts full LLM conversation trajectories (thoughts, tool traces, outputs) from Antigravity and Claude and formats them as Markdown.",
+  "version": "1.8.6",
   "publisher": "henriquepasquini2",
   "license": "MIT",
   "icon": "images/icon.png",

@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.8.6] - 2026-04-16
+
+### Added
+- **Execution Time Decimal Formatting**: All execution time modal readouts now include the duration format converted to decimal minutes natively in parentheses (e.g. `9m 53s (9.88 minutes)`) for easier copy-pasting.
+
+## [1.8.5] - 2026-04-15
+
+### Fixed
+- **Execution Time Accuracy**: The execution time tracking for Claude Cowork and Claude Code now parses all JSONL event lines (including `queue-operation` and background system logs) to ensure the precise start and end times are correctly captured.
+- **Token Tracking Reverted**: Token counting in the Execution Time commands reverted to only summing the basic `input_tokens` and `output_tokens` returned directly by the assistant, instead of incorrectly combining caching usage which caused confusion.
+
 ## [1.8.4] - 2026-04-15
 
 ### Added
