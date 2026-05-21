@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.8.9] - 2026-05-21
+
+### Changed
+- Re-publish of 1.8.8 to Open VSX after the registry was under sustained load and earlier uploads were stuck in pending state ([EclipseFdn/open-vsx.org#10510](https://github.com/EclipseFdn/open-vsx.org/issues/10510)). No behavior changes from 1.8.8.
+
 ## [1.8.8] - 2026-05-21
 
 ### Fixed
