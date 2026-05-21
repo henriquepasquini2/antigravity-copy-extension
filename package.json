@@ -2,7 +2,7 @@
   "name": "antigravity-copy-full",
   "displayName": "Antigravity - Copy Full Trajectory",
   "description": "Extracts full LLM conversation trajectories (thoughts, tool traces, outputs) from Antigravity and Claude and formats them as Markdown.",
-  "version": "1.8.6",
+  "version": "1.8.8",
   "publisher": "henriquepasquini2",
   "license": "MIT",
   "icon": "images/icon.png",

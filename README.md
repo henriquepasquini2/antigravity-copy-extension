@@ -29,7 +29,10 @@ The output is a clean Markdown trace in chat order — no HTML, no metadata, no 
 
 ### Claude Cowork & Claude Code
 - **Extended thinking blocks** — Full reasoning from Claude's extended thinking
-- **Complete tool trace** — Bash commands, file reads/writes/edits, web searches, web fetches, glob/grep searches, MCP tool calls, and more (including tool results stored as text blocks or arrays, e.g. MCP previews and file read output)
+- **Complete tool trace** — Bash commands (with the assistant's description and ANSI codes stripped from output), file reads, web searches, web fetches, glob/grep searches, MCP tool calls, and more (including tool results stored as text blocks or arrays, e.g. MCP previews and file read output)
+- **Full Write / Edit content** — `Write` calls emit the entire file body in a fenced code block; `Edit` and `MultiEdit` emit a `diff`-style block with removed (`-`) and added (`+`) lines; `+N` / `-N` line counts match Claude's UI
+- **AskUserQuestion** — question text, headers, and every option label with description
+- **Generic tool inputs** — tools without a dedicated renderer (e.g. `ToolSearch`) dump their `key: value` parameters
 - **Todo lists** — TodoWrite calls rendered as checkbox lists
 - **Session stats** — **Show Session Execution Time and Tokens** uses JSONL message timestamps and per-assistant `usage` fields when present
 

@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.8.8] - 2026-05-21
+
+### Fixed
+- **Claude Code / Cowork: Write and Edit tool calls dropped their content** — `Wrote \`path\`` and `Edited \`path\`` were emitted with nothing else, so copied sessions were missing the actual file contents and diffs. The formatter now emits the full file body for `Write` as a fenced code block (with language inferred from the file extension) and renders `Edit` as a `diff` block showing removed lines (`-`) followed by added lines (`+`). `MultiEdit` and `NotebookEdit` are handled the same way. This was the main cause of Claude Code copies coming out far shorter than the original conversation.
+- **ANSI escape codes in command output** — terminal color/style sequences from tools like `vite`, `npm`, and other CLIs were copied verbatim and rendered as garbage in plain text. They are now stripped from tool results before emission.
+
+### Added
+- **`+N` / `-N` line-count markers** above every `Write` and `Edit`, matching Claude's UI. Counted the same way the UI counts (ignoring the empty tail from a trailing newline).
+- **`AskUserQuestion` content** — the question text, headers, and full option labels with descriptions are now emitted instead of just `Tool: AskUserQuestion`.
+- **Bash descriptions** — when the assistant supplied a `description` field for a `Bash` call, it now appears as `Ran command — <description>`.
+- **Generic tool input dump** — tools without a dedicated renderer (e.g. `ToolSearch`) now dump their input fields as `key: value` lines instead of just `Tool: <name>`, so call parameters aren't lost.
+
 ## [1.8.6] - 2026-04-16
 
 ### Added
