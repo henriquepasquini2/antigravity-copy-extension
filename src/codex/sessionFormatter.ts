@@ -48,8 +48,37 @@ export function formatCodexSession(
   // don't emit them a second time when we reach the raw output entry.
   const consumedOutputs = new Set<string>();
 
+  // Pre-compute the rollup banner (e.g. "Created 7 files, edited 2 files,
+  // ran 2 commands") for every cluster of tool activity. A cluster is the
+  // span between two consecutive assistant messages — Codex's UI aggregates
+  // all tool work in that span into a single summary banner, even when the
+  // model produced multiple internal turns without surfacing any text.
+  const clusterBanners = buildClusterBanners(messages, mcpCallIds);
+  let cluster = 0;
+  let bannerEmittedThisCluster = false;
+
   for (const msg of messages) {
     if (msg?.type !== 'response_item' && msg?.type !== 'event_msg') continue;
+
+    // An assistant message ends the current cluster and starts a new one.
+    if (
+      msg.type === 'response_item' &&
+      msg.payload?.type === 'message' &&
+      msg.payload?.role === 'assistant'
+    ) {
+      cluster++;
+      bannerEmittedThisCluster = false;
+    } else if (
+      !bannerEmittedThisCluster &&
+      willEmitTool(msg, mcpCallIds, consumedOutputs)
+    ) {
+      const banner = clusterBanners.get(cluster);
+      if (banner) {
+        lines.push(banner);
+        lines.push('');
+      }
+      bannerEmittedThisCluster = true;
+    }
 
     if (msg.type === 'event_msg') {
       emitEvent(msg, lines);
@@ -68,6 +97,181 @@ export function formatCodexSession(
   }
 
   return lines.join('\n').replace(/\n{3,}/g, '\n\n').trim() + '\n';
+}
+
+// ---------------------------------------------------------------------------
+// Turn rollup banners
+// ---------------------------------------------------------------------------
+
+interface TurnStats {
+  adds: number;
+  edits: number;
+  deletes: number;
+  shellCmds: number;
+  /** Maps the friendly label Codex's UI uses → count of calls under that label. */
+  mcpLabels: Map<string, number>;
+}
+
+/**
+ * Friendly descriptions for known MCP servers, matching how Codex's CLI / the
+ * Cursor UI describe them in the rollup banner. The official Codex browser
+ * MCP runs through `node_repl` and the UI shows "used the browser" — but
+ * only when Codex itself tagged the result with `codex/browserUse: true`.
+ * Calls without that tag get labeled "Node Repl" instead.
+ */
+function labelForMcpCall(server: string, isBrowserCall: boolean): string {
+  if (server === 'node_repl') {
+    return isBrowserCall ? 'the browser' : 'Node Repl';
+  }
+  return server;
+}
+
+/**
+ * Detect whether an mcp_tool_call_end payload represents browser MCP work.
+ * Codex's client sets `result.Ok._meta["codex/browserUse"] = true` for any
+ * call that drove the browser, which is the same signal Cursor uses to label
+ * the call "the browser" in its rollup banner.
+ */
+function isBrowserMcpCall(payload: any): boolean {
+  const result = payload?.result;
+  if (!result || typeof result !== 'object') return false;
+  const ok = (result as any).Ok;
+  if (!ok || typeof ok !== 'object') return false;
+  return ok._meta?.['codex/browserUse'] === true;
+}
+
+function buildClusterBanners(
+  messages: any[],
+  mcpCallIds: Set<string>,
+): Map<number, string> {
+  const banners = new Map<number, string>();
+  let cluster = 0;
+  let stats: TurnStats = emptyTurnStats();
+
+  const flush = (): void => {
+    const banner = formatTurnBanner(stats);
+    if (banner) banners.set(cluster, banner);
+    stats = emptyTurnStats();
+  };
+
+  for (const msg of messages) {
+    // An assistant message closes the current cluster; the next tool starts
+    // a fresh one.
+    if (
+      msg?.type === 'response_item' &&
+      msg.payload?.type === 'message' &&
+      msg.payload?.role === 'assistant'
+    ) {
+      flush();
+      cluster++;
+      continue;
+    }
+
+    if (msg?.type === 'response_item') {
+      const p = msg.payload;
+      if (p?.type === 'function_call' && p.name === 'shell_command' &&
+          !(p.call_id && mcpCallIds.has(p.call_id))) {
+        stats.shellCmds++;
+      }
+    } else if (msg?.type === 'event_msg') {
+      const p = msg.payload;
+      if (p?.type === 'patch_apply_end') {
+        const changes = p.changes || {};
+        for (const file of Object.keys(changes)) {
+          const kind = (changes[file]?.type || 'update').toLowerCase();
+          if (kind === 'add') stats.adds++;
+          else if (kind === 'delete') stats.deletes++;
+          else stats.edits++;
+        }
+      } else if (p?.type === 'mcp_tool_call_end') {
+        const server = p?.invocation?.server || '?';
+        const label = labelForMcpCall(server, isBrowserMcpCall(p));
+        stats.mcpLabels.set(label, (stats.mcpLabels.get(label) || 0) + 1);
+      }
+    }
+  }
+  flush();
+  return banners;
+}
+
+function emptyTurnStats(): TurnStats {
+  return {
+    adds: 0,
+    edits: 0,
+    deletes: 0,
+    shellCmds: 0,
+    mcpLabels: new Map(),
+  };
+}
+
+function formatTurnBanner(stats: TurnStats): string | null {
+  const mcpCount = [...stats.mcpLabels.values()].reduce((a, b) => a + b, 0);
+  const total = stats.adds + stats.edits + stats.deletes + stats.shellCmds + mcpCount;
+  // Codex only shows a rollup when the turn touches multiple tools — a turn
+  // with a single command/edit/etc gets no banner in the UI.
+  if (total < 2) return null;
+
+  const parts: string[] = [];
+  if (stats.adds === 1) parts.push('created 1 file');
+  else if (stats.adds > 1) parts.push(`created ${stats.adds} files`);
+  if (stats.edits === 1) parts.push('edited 1 file');
+  else if (stats.edits > 1) parts.push(`edited ${stats.edits} files`);
+  if (stats.deletes === 1) parts.push('deleted 1 file');
+  else if (stats.deletes > 1) parts.push(`deleted ${stats.deletes} files`);
+  if (stats.shellCmds === 1) parts.push('ran 1 command');
+  else if (stats.shellCmds > 1) parts.push(`ran ${stats.shellCmds} commands`);
+
+  // Codex joins multiple distinct MCP labels with "and" in a single phrase
+  // ("used the browser and Node Repl"), not as separate comma-separated parts.
+  if (stats.mcpLabels.size > 0) {
+    const labels = [...stats.mcpLabels.keys()];
+    parts.push('used ' + joinWithAnd(labels));
+  }
+
+  if (parts.length === 0) return null;
+  const banner = parts.join(', ');
+  // Capitalize the first letter so the line reads "Created N files, ..." etc.
+  return banner.charAt(0).toUpperCase() + banner.slice(1);
+}
+
+function joinWithAnd(items: string[]): string {
+  if (items.length === 0) return '';
+  if (items.length === 1) return items[0];
+  if (items.length === 2) return items[0] + ' and ' + items[1];
+  return items.slice(0, -1).join(', ') + ', and ' + items[items.length - 1];
+}
+
+/**
+ * Mirror the emit logic just enough to know whether a message will actually
+ * produce a tool-related line. Used to decide when to inject the turn banner.
+ */
+function willEmitTool(
+  msg: any,
+  mcpCallIds: Set<string>,
+  consumedOutputs: Set<string>,
+): boolean {
+  if (msg?.type === 'response_item') {
+    const p = msg.payload;
+    if (!p) return false;
+    if (p.type === 'function_call') {
+      return !(p.call_id && mcpCallIds.has(p.call_id));
+    }
+    if (p.type === 'function_call_output') {
+      if (!p.call_id) return true;
+      return !(mcpCallIds.has(p.call_id) || consumedOutputs.has(p.call_id));
+    }
+    if (p.type === 'custom_tool_call') return true;
+    if (p.type === 'custom_tool_call_output') {
+      return !(p.call_id && consumedOutputs.has(p.call_id));
+    }
+    return false;
+  }
+  if (msg?.type === 'event_msg') {
+    const p = msg.payload;
+    if (!p) return false;
+    return p.type === 'mcp_tool_call_end' || p.type === 'image_generation_end';
+  }
+  return false;
 }
 
 // ---------------------------------------------------------------------------
