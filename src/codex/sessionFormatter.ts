@@ -39,6 +39,15 @@ export function formatCodexSession(
   // and skip the other two to avoid triple-printing the same call.
   const mcpCallIds = indexMcpCallIds(messages);
 
+  // Codex writes a batch of function_calls first and then a batch of
+  // function_call_outputs (a single round-trip with the model can carry many
+  // parallel calls). Pre-index outputs by call_id so we can render each
+  // command and its result back-to-back, the way Cursor displays them.
+  const outputsByCallId = indexFunctionOutputs(messages);
+  // Track which outputs we've already rendered alongside their call so we
+  // don't emit them a second time when we reach the raw output entry.
+  const consumedOutputs = new Set<string>();
+
   for (const msg of messages) {
     if (msg?.type !== 'response_item' && msg?.type !== 'event_msg') continue;
 
@@ -47,7 +56,15 @@ export function formatCodexSession(
       continue;
     }
 
-    emitResponseItem(msg, lines, includeUserInput, patchEventsByCallId, mcpCallIds);
+    emitResponseItem(
+      msg,
+      lines,
+      includeUserInput,
+      patchEventsByCallId,
+      mcpCallIds,
+      outputsByCallId,
+      consumedOutputs,
+    );
   }
 
   return lines.join('\n').replace(/\n{3,}/g, '\n\n').trim() + '\n';
@@ -63,6 +80,8 @@ function emitResponseItem(
   includeUserInput: boolean,
   patchEventsByCallId: Map<string, any>,
   mcpCallIds: Set<string>,
+  outputsByCallId: Map<string, any>,
+  consumedOutputs: Set<string>,
 ): void {
   const p = msg.payload;
   if (!p) return;
@@ -79,16 +98,33 @@ function emitResponseItem(
       // with the result attached, so showing this would just duplicate args.
       if (p.call_id && mcpCallIds.has(p.call_id)) break;
       emitFunctionCall(p, lines);
+      // Pair the matching output directly under the command so the trace
+      // reads command -> output instead of dumping all outputs in a batch
+      // at the bottom.
+      if (p.call_id && outputsByCallId.has(p.call_id)) {
+        const outputPayload = outputsByCallId.get(p.call_id);
+        emitFunctionCallOutput(outputPayload, lines);
+        consumedOutputs.add(p.call_id);
+      }
       break;
     case 'function_call_output':
-      // Same reasoning — the mcp_tool_call_end already carries the result.
-      if (p.call_id && mcpCallIds.has(p.call_id)) break;
+      // Already rendered inline with its function_call, or belongs to an MCP
+      // call that mcp_tool_call_end will cover.
+      if (p.call_id && (mcpCallIds.has(p.call_id) || consumedOutputs.has(p.call_id))) break;
       emitFunctionCallOutput(p, lines);
       break;
     case 'custom_tool_call':
       emitCustomToolCall(p, lines, patchEventsByCallId);
+      // Custom tools (apply_patch) also have paired output entries — emit the
+      // patched-files summary inline with the patch.
+      if (p.call_id && outputsByCallId.has(p.call_id)) {
+        const outputPayload = outputsByCallId.get(p.call_id);
+        emitCustomToolCallOutput(outputPayload, lines);
+        consumedOutputs.add(p.call_id);
+      }
       break;
     case 'custom_tool_call_output':
+      if (p.call_id && consumedOutputs.has(p.call_id)) break;
       emitCustomToolCallOutput(p, lines);
       break;
     default:
@@ -282,18 +318,49 @@ function emitMcpToolCallEnd(p: any, lines: string[]): void {
   }
 }
 
+/**
+ * Codex serializes MCP results from Rust's `Result<T, E>` enum, so the JSON
+ * arrives wrapped as `{ Ok: { content: [...], isError, _meta } }` for success
+ * and `{ Err: "..." }` for failures. Without unwrapping, we'd see the call but
+ * lose every line of the result. The inner shape follows MCP's standard
+ * { content: [{type:"text", text:"..."}], isError }.
+ */
 function extractMcpResult(p: any): string {
-  const result = p?.result;
+  let result = p?.result;
   if (!result) return '';
-  if (typeof result === 'string') return stripAnsi(result).trim();
-  if (Array.isArray(result?.content)) {
-    return result.content
-      .map((c: any) => (typeof c?.text === 'string' ? stripAnsi(c.text) : ''))
-      .filter(Boolean)
-      .join('\n')
-      .trim();
+
+  // Unwrap Rust Result variants (Ok / Err) — Codex serializes the enum tag
+  // as the JSON key.
+  let isError = false;
+  if (typeof result === 'object' && result !== null) {
+    if ('Err' in result) {
+      const err = (result as any).Err;
+      const text = typeof err === 'string' ? err : JSON.stringify(err);
+      return `Error: ${stripAnsi(text).trim()}`;
+    }
+    if ('Ok' in result) {
+      result = (result as any).Ok;
+    }
   }
-  if (typeof result?.text === 'string') return stripAnsi(result.text).trim();
+
+  if (typeof result === 'string') return stripAnsi(result).trim();
+
+  if (result && typeof result === 'object') {
+    if (result.isError === true) isError = true;
+    if (Array.isArray(result.content)) {
+      const body = result.content
+        .map((c: any) => (typeof c?.text === 'string' ? stripAnsi(c.text) : ''))
+        .filter(Boolean)
+        .join('\n')
+        .trim();
+      return isError && body ? `Error: ${body}` : body;
+    }
+    if (typeof result.text === 'string') {
+      const body = stripAnsi(result.text).trim();
+      return isError && body ? `Error: ${body}` : body;
+    }
+  }
+
   return '';
 }
 
@@ -317,7 +384,12 @@ function emitImageGenerationEnd(p: any, lines: string[]): void {
 function emitPatchEvent(payload: any, lines: string[]): void {
   const success = payload?.success !== false;
   const changes = payload?.changes || {};
-  const files = Object.keys(changes);
+  // Sort files the same way Codex's UI displays them: case-insensitive
+  // lexicographic order by full path. The raw `changes` map iterates in
+  // Codex's emission order, which doesn't match what users see in the app.
+  const files = Object.keys(changes).sort((a, b) =>
+    a.toLowerCase().localeCompare(b.toLowerCase()),
+  );
 
   if (files.length === 0) {
     lines.push(success ? 'Applied patch' : 'Patch failed');
@@ -399,6 +471,25 @@ function indexMcpCallIds(messages: any[]): Set<string> {
     }
   }
   return set;
+}
+
+/**
+ * Pre-index every function_call_output and custom_tool_call_output by call_id
+ * so we can pair them with their originating call when we emit. Codex
+ * batches all outputs together at the end of a turn — without this pairing
+ * the user sees three commands in a row, then three outputs in a row.
+ */
+function indexFunctionOutputs(messages: any[]): Map<string, any> {
+  const map = new Map<string, any>();
+  for (const msg of messages) {
+    if (msg?.type !== 'response_item') continue;
+    const p = msg.payload;
+    if (!p?.call_id) continue;
+    if (p.type === 'function_call_output' || p.type === 'custom_tool_call_output') {
+      map.set(p.call_id, p);
+    }
+  }
+  return map;
 }
 
 // ---------------------------------------------------------------------------

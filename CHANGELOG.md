@@ -12,7 +12,9 @@
 - Codex-specific rendering:
   - `shell_command` function calls emitted as `Ran command` with the `cwd` and a `bash` fenced block.
   - `apply_patch` custom tools rendered via the paired `event_msg/patch_apply_end`, showing per-file `Added` / `Edited` / `Deleted` / `Renamed` headers, unified diffs for updates, and full file bodies (with language-inferred fences) for adds.
-  - MCP tool calls rendered once as `MCP: <server>/<tool>` with arguments and result, suppressing the duplicate `function_call` + `function_call_output` pair that Codex also writes for the same call.
+  - MCP tool calls rendered once as `MCP: <server>/<tool>` with arguments and result, suppressing the duplicate `function_call` + `function_call_output` pair that Codex also writes for the same call. Result content is unwrapped from Codex's Rust `Result<T,E>` JSON envelope (`{"Ok": {...}}` / `{"Err": "..."}`), and `isError` payloads are prefixed with `Error:`.
+  - `function_call` and matching `function_call_output` paired by `call_id`, so commands appear directly above their output instead of all calls listed first and all outputs second (which is how Codex batches them on disk). Same pairing applied to `custom_tool_call` / `custom_tool_call_output`.
+  - Files inside each `apply_patch` block are sorted case-insensitively by full path to match the order Codex's UI displays them, instead of Codex's raw on-disk emission order.
   - `image_generation_end` emits the revised prompt and call id; `view_image` emits `Viewed image: <path>`.
   - Encrypted `reasoning` blocks emit a single `[encrypted thinking]` placeholder (Codex CoT is opaque ciphertext that can't be decrypted client-side).
   - ANSI escape sequences stripped from command output.
