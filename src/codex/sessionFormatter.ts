@@ -96,6 +96,7 @@ interface TurnStats {
   edits: number;
   deletes: number;
   shellCmds: number;
+  webSearches: number;
   /** Maps the friendly label Codex's UI uses → count of calls under that label. */
   mcpLabels: Map<string, number>;
 }
@@ -241,6 +242,14 @@ function buildBannerMap(
         const server = p?.invocation?.server || '?';
         const label = labelForMcpCall(server, isBrowserMcpCall(p));
         stats.mcpLabels.set(label, (stats.mcpLabels.get(label) || 0) + 1);
+      } else if (p?.type === 'web_search_end') {
+        if (firstToolIdx < 0) firstToolIdx = i;
+        // Codex's UI counts web_search activity that has actual content:
+        //   - `search` with at least one query
+        //   - `open_page` with a non-empty URL
+        // Empty open_page placeholders (which sometimes appear during a
+        // multi-step browse) don't count.
+        if (webSearchHasContent(p)) stats.webSearches++;
       }
     }
   }
@@ -254,6 +263,7 @@ function emptyTurnStats(): TurnStats {
     edits: 0,
     deletes: 0,
     shellCmds: 0,
+    webSearches: 0,
     mcpLabels: new Map(),
   };
 }
@@ -261,7 +271,7 @@ function emptyTurnStats(): TurnStats {
 function formatTurnBanner(stats: TurnStats): string | null {
   const mcpCount = [...stats.mcpLabels.values()].reduce((a, b) => a + b, 0);
   const patches = stats.adds + stats.edits + stats.deletes;
-  const total = patches + stats.shellCmds + mcpCount;
+  const total = patches + stats.shellCmds + mcpCount + stats.webSearches;
   // Codex shows a banner whenever the section touched a patch (even a
   // single-file edit shows up as "Edited 1 file"). For shell-only or
   // MCP-only sections we still require at least two tools — single commands
@@ -277,6 +287,10 @@ function formatTurnBanner(stats: TurnStats): string | null {
   else if (stats.deletes > 1) parts.push(`deleted ${stats.deletes} files`);
   if (stats.shellCmds === 1) parts.push('ran 1 command');
   else if (stats.shellCmds > 1) parts.push(`ran ${stats.shellCmds} commands`);
+
+  // Codex's UI shows web search activity as "searched web N times".
+  if (stats.webSearches === 1) parts.push('searched web 1 time');
+  else if (stats.webSearches > 1) parts.push(`searched web ${stats.webSearches} times`);
 
   // Codex joins multiple distinct MCP labels with "and" in a single phrase
   // ("used the browser and Node Repl"), not as separate comma-separated parts.
@@ -354,6 +368,10 @@ function emitResponseItem(
     case 'custom_tool_call_output':
       if (p.call_id && consumedOutputs.has(p.call_id)) break;
       emitCustomToolCallOutput(p, lines);
+      break;
+    case 'web_search_call':
+      // event_msg/web_search_end already renders the query — skip the raw
+      // response_item form so we don't double-emit.
       break;
     default:
       // Unknown subtype — drop silently rather than dump JSON noise.
@@ -533,6 +551,9 @@ function emitEvent(msg: any, lines: string[]): void {
     case 'image_generation_end':
       emitImageGenerationEnd(p, lines);
       break;
+    case 'web_search_end':
+      emitWebSearchEnd(p, lines);
+      break;
     // patch_apply_end is consumed at the custom_tool_call site (above) — we
     // don't render it standalone or it'd duplicate the apply_patch entry.
     case 'patch_apply_end':
@@ -618,6 +639,55 @@ function emitImageGenerationEnd(p: any, lines: string[]): void {
   }
   if (p.call_id) {
     lines.push(`call_id: ${p.call_id}`);
+  }
+  lines.push('');
+}
+
+/**
+ * Did this `event_msg/web_search_end` payload carry actual content? Codex
+ * sometimes emits placeholder `open_page` events without a URL during a
+ * multi-step browse; those don't show up in the UI's "searched web N times"
+ * count and we want to match.
+ */
+function webSearchHasContent(p: any): boolean {
+  const action = p?.action;
+  if (!action) return false;
+  if (action.type === 'search') {
+    return Array.isArray(action.queries) && action.queries.length > 0;
+  }
+  if (action.type === 'open_page') {
+    return typeof action.url === 'string' && action.url.length > 0;
+  }
+  // Unknown action shape — count it conservatively (better to over-count
+  // than silently drop something).
+  return true;
+}
+
+/**
+ * Codex's WebSearch tool emits both `event_msg/web_search_end` (with the
+ * action + call_id) and `response_item/web_search_call` (status + queries)
+ * for every search. We render the event_msg form because it has the action
+ * details, and skip the raw response_item form so the call appears once.
+ *
+ * Two action shapes show up:
+ *   - `search`     — { type: "search", queries: ["..."] }    actual search
+ *   - `open_page`  — { type: "open_page", url: "..." }       URL fetch
+ *
+ * The actual result content (URLs, snippets) isn't persisted to the JSONL —
+ * it lives only in the model's context. We can only recover what was sent.
+ */
+function emitWebSearchEnd(p: any, lines: string[]): void {
+  if (!webSearchHasContent(p)) return; // skip placeholder open_page entries
+  const action = p?.action;
+  if (action?.type === 'search') {
+    for (const q of action.queries) {
+      lines.push(`Searched web: "${q}"`);
+    }
+  } else if (action?.type === 'open_page') {
+    lines.push(`Opened page: ${action.url}`);
+  } else if (p?.query) {
+    // Fallback for any new action shape we don't recognize yet.
+    lines.push(`Searched web: "${p.query}"`);
   }
   lines.push('');
 }
