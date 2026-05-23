@@ -43,12 +43,15 @@ The output is a clean Markdown trace in chat order — no HTML, no metadata, no 
 - **One-time setup** — A single command sets the WebView2 debug port; after restarting Office, it works forever
 
 ### OpenAI Codex
-- **Shell commands** — `shell_command` calls rendered as `Ran command` with `cwd` and a `bash` fenced block; output ANSI-stripped and inlined
-- **Patches** — `apply_patch` results rendered per-file with `Added` / `Edited` / `Deleted` / `Renamed` headers, unified diffs for updates, and the full new-file body for adds (language inferred from extension)
-- **MCP tool calls** — rendered once as `MCP: <server>/<tool>` with arguments and result, suppressing the duplicate `function_call` / `function_call_output` pair Codex also writes
-- **Image generation** — `image_generation_end` emits the revised prompt and call id; `view_image` emits a `Viewed image: <path>` line
-- **Reasoning placeholder** — Codex CoT is server-side encrypted (`encrypted_content` blob), so reasoning blocks emit a single `[encrypted thinking]` marker
+- **Shell commands** — `shell_command` calls rendered as `Ran command` with `cwd`, paired output, and ANSI codes stripped
+- **Patches** — `apply_patch` results rendered per-file with `Added` / `Edited` / `Deleted` / `Renamed` headers, unified diffs for updates, full file body for adds (language inferred from path), and files sorted to match the order Codex's UI displays them
+- **MCP tool calls** — rendered once as `MCP: <server>/<tool>` with arguments and result. Codex's Rust `Result<T,E>` envelope is unwrapped so the actual MCP output appears; `isError: true` payloads are prefixed with `Error:`. The duplicate `function_call` + `function_call_output` pair Codex writes for the same call is suppressed
+- **WebSearch** — `web_search_end` events render inline as `Searched web: "<query>"` for `search` actions or `Opened page: <url>` for `open_page` actions
+- **Browser MCP labeling** — calls with `result.Ok._meta["codex/browserUse"]` get the friendly *"the browser"* label; everything else under `node_repl` shows as *"Node Repl"* (matching Cursor's UI)
+- **Rollup banners** — *"Created N files, edited M files, ran X commands, searched web Y times, used the browser and Node Repl"* emitted before each cluster of tool activity, matching what Codex's UI shows. Clusters split at every `view_image` inside a section that produced tangible output (a patch or a generated image)
+- **Images** — `image_generation_end` emits the revised prompt; `view_image` emits `Viewed image: <path>`
 - **Bootstrap filtered** — the auto-injected `<environment_context>` and `<permissions instructions>` blocks are never copied, even with `--with-prompts`
+- **Reasoning** — Codex CoT is server-side encrypted, so reasoning blocks are skipped silently to match what Codex's UI shows (any plaintext `summary[]` is still emitted on the rare occasions Codex populates it)
 - **Session stats** — wall-clock span and token totals summed from `event_msg/token_count` entries
 
 ### Shared
@@ -234,13 +237,15 @@ I'm currently focused on the hero section...
 2. Parses each rollout to extract the session id (from the filename), `cwd` and CLI version (from `session_meta`), and the first real user prompt (skipping the auto-injected `<environment_context>` and `<permissions instructions>` blocks)
 3. On selection, reads every line and classifies by `type`:
    - `response_item/message` (user/assistant) — emitted as text; developer + bootstrap user messages skipped
-   - `response_item/reasoning` — replaced with `[encrypted thinking]` placeholder (Codex CoT is server-side encrypted)
-   - `response_item/function_call` (`shell_command` / `view_image` / generic) — rendered as `Ran command`, `Viewed image: ...`, or `Used <name>` with args
-   - `response_item/custom_tool_call` (`apply_patch`) — rendered via the paired `event_msg/patch_apply_end` for richer per-file output
-   - `event_msg/mcp_tool_call_end` — rendered as `MCP: <server>/<tool>`; the duplicate `function_call` + `function_call_output` pair for the same call is suppressed
+   - `response_item/reasoning` — skipped (Codex CoT is server-side encrypted and Codex's UI shows nothing for these); if the plaintext `summary[]` is populated, that text is emitted instead
+   - `response_item/function_call` (`shell_command` / `view_image` / generic) — rendered with the matching `function_call_output` paired by `call_id` so each command appears directly above its output
+   - `response_item/custom_tool_call` (`apply_patch`) — rendered via the paired `event_msg/patch_apply_end` for richer per-file output, with files sorted to match Codex's UI display order
+   - `event_msg/mcp_tool_call_end` — rendered as `MCP: <server>/<tool>` with Rust `Result<T,E>` envelope unwrapped; the duplicate `function_call` + `function_call_output` pair for the same call is suppressed
+   - `event_msg/web_search_end` — rendered inline as `Searched web: "<query>"` or `Opened page: <url>` based on `action.type`
    - `event_msg/image_generation_end` — emits revised prompt + call id
    - All other `event_msg` subtypes (`token_count`, `task_started`, `agent_message`, etc.) are dropped to avoid duplicates and noise
-4. Formats everything as clean Markdown and copies to clipboard (or aggregates `event_msg/token_count` for stats)
+4. A pre-scan computes per-cluster rollup banners (e.g. *"Created 7 files, edited 2 files, ran 2 commands, searched web 3 times, used the browser and Node Repl"*) and injects them before the first tool of each section. Clusters split at `view_image` when the surrounding section produced tangible output (`patch_apply_end` or `image_generation_end`)
+5. Formats everything as clean Markdown and copies to clipboard (or aggregates `event_msg/token_count` for stats)
 
 ## License
 
