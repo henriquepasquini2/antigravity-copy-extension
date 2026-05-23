@@ -131,11 +131,15 @@ function isBrowserMcpCall(payload: any): boolean {
 
 /**
  * First pass: identify which assistant-bounded clusters contain at least one
- * patch_apply_end. The `view_image` sub-cluster rule (see buildBannerMap)
- * only kicks in inside these clusters, so we need to know up front.
+ * tangible-output event — a `patch_apply_end` (file changes) or an
+ * `image_generation_end` (generated image). The `view_image` sub-cluster
+ * rule (see buildBannerMap) only kicks in inside these clusters: Codex's UI
+ * splits at view_image when the model is alternating between producing
+ * outputs and viewing screenshots, but folds a pure "shells + screenshot"
+ * cluster into a single banner.
  */
-function findClustersWithPatches(messages: any[]): Set<number> {
-  const clustersWithPatches = new Set<number>();
+function findSplittableClusters(messages: any[]): Set<number> {
+  const splittable = new Set<number>();
   let cluster = 0;
   for (const msg of messages) {
     if (
@@ -146,11 +150,14 @@ function findClustersWithPatches(messages: any[]): Set<number> {
       cluster++;
       continue;
     }
-    if (msg?.type === 'event_msg' && msg.payload?.type === 'patch_apply_end') {
-      clustersWithPatches.add(cluster);
+    if (msg?.type === 'event_msg') {
+      const t = msg.payload?.type;
+      if (t === 'patch_apply_end' || t === 'image_generation_end') {
+        splittable.add(cluster);
+      }
     }
   }
-  return clustersWithPatches;
+  return splittable;
 }
 
 /**
@@ -172,7 +179,7 @@ function buildBannerMap(
   messages: any[],
   mcpCallIds: Set<string>,
 ): Map<number, string> {
-  const clustersWithPatches = findClustersWithPatches(messages);
+  const splittableClusters = findSplittableClusters(messages);
 
   const banners = new Map<number, string>();
   let cluster = 0;
@@ -202,12 +209,15 @@ function buildBannerMap(
       continue;
     }
 
-    // Soft boundary: view_image inside a patch-containing cluster.
+    // Soft boundary: view_image inside a cluster that produced tangible
+    // output (patch_apply_end or image_generation_end). When the cluster is
+    // pure file-reads + a screenshot, Codex's UI keeps it as one rollup, so
+    // we leave it alone.
     if (
       msg?.type === 'response_item' &&
       msg.payload?.type === 'function_call' &&
       msg.payload?.name === 'view_image' &&
-      clustersWithPatches.has(cluster)
+      splittableClusters.has(cluster)
     ) {
       flush();
       // view_image itself doesn't contribute to the next section's counts,
