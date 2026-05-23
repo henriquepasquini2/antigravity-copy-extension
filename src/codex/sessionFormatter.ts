@@ -49,35 +49,23 @@ export function formatCodexSession(
   const consumedOutputs = new Set<string>();
 
   // Pre-compute the rollup banner (e.g. "Created 7 files, edited 2 files,
-  // ran 2 commands") for every cluster of tool activity. A cluster is the
-  // span between two consecutive assistant messages — Codex's UI aggregates
-  // all tool work in that span into a single summary banner, even when the
-  // model produced multiple internal turns without surfacing any text.
-  const clusterBanners = buildClusterBanners(messages, mcpCallIds);
-  let cluster = 0;
-  let bannerEmittedThisCluster = false;
+  // ran 2 commands") for every section of tool activity. A section is
+  // normally bounded by assistant messages, but inside a section that
+  // contains at least one patch, every `view_image` also splits the section
+  // — Codex's UI shows a fresh banner each time it renders an image inside
+  // a patch-heavy turn. The map is keyed by the message index of each
+  // section's first tool emission, so we can inject the banner inline at
+  // the right point in the output stream.
+  const bannersByMsgIdx = buildBannerMap(messages, mcpCallIds);
 
-  for (const msg of messages) {
+  for (let i = 0; i < messages.length; i++) {
+    const msg = messages[i];
     if (msg?.type !== 'response_item' && msg?.type !== 'event_msg') continue;
 
-    // An assistant message ends the current cluster and starts a new one.
-    if (
-      msg.type === 'response_item' &&
-      msg.payload?.type === 'message' &&
-      msg.payload?.role === 'assistant'
-    ) {
-      cluster++;
-      bannerEmittedThisCluster = false;
-    } else if (
-      !bannerEmittedThisCluster &&
-      willEmitTool(msg, mcpCallIds, consumedOutputs)
-    ) {
-      const banner = clusterBanners.get(cluster);
-      if (banner) {
-        lines.push(banner);
-        lines.push('');
-      }
-      bannerEmittedThisCluster = true;
+    const banner = bannersByMsgIdx.get(i);
+    if (banner) {
+      lines.push(banner);
+      lines.push('');
     }
 
     if (msg.type === 'event_msg') {
@@ -140,23 +128,69 @@ function isBrowserMcpCall(payload: any): boolean {
   return ok._meta?.['codex/browserUse'] === true;
 }
 
-function buildClusterBanners(
+/**
+ * First pass: identify which assistant-bounded clusters contain at least one
+ * patch_apply_end. The `view_image` sub-cluster rule (see buildBannerMap)
+ * only kicks in inside these clusters, so we need to know up front.
+ */
+function findClustersWithPatches(messages: any[]): Set<number> {
+  const clustersWithPatches = new Set<number>();
+  let cluster = 0;
+  for (const msg of messages) {
+    if (
+      msg?.type === 'response_item' &&
+      msg.payload?.type === 'message' &&
+      msg.payload?.role === 'assistant'
+    ) {
+      cluster++;
+      continue;
+    }
+    if (msg?.type === 'event_msg' && msg.payload?.type === 'patch_apply_end') {
+      clustersWithPatches.add(cluster);
+    }
+  }
+  return clustersWithPatches;
+}
+
+/**
+ * Walk the messages once and decide, for every "section" of tool activity,
+ * whether a banner should be emitted and what its text should be.
+ *
+ * Sections are bounded by:
+ *   - Hard:  every assistant message (Codex always restarts the rollup here)
+ *   - Soft:  every `view_image` *inside a cluster that also contains a patch*
+ *            — Codex's UI splits the rollup at each rendered image when the
+ *            turn is doing real file work; pure shell-only turns with an
+ *            image (e.g. just viewing a screenshot) do NOT split.
+ *
+ * The returned map is keyed by the message index of each section's first
+ * tool emission so the formatter can inject the banner inline at the right
+ * point in the output stream.
+ */
+function buildBannerMap(
   messages: any[],
   mcpCallIds: Set<string>,
 ): Map<number, string> {
+  const clustersWithPatches = findClustersWithPatches(messages);
+
   const banners = new Map<number, string>();
   let cluster = 0;
   let stats: TurnStats = emptyTurnStats();
+  let firstToolIdx = -1;
 
   const flush = (): void => {
-    const banner = formatTurnBanner(stats);
-    if (banner) banners.set(cluster, banner);
+    if (firstToolIdx >= 0) {
+      const banner = formatTurnBanner(stats);
+      if (banner) banners.set(firstToolIdx, banner);
+    }
     stats = emptyTurnStats();
+    firstToolIdx = -1;
   };
 
-  for (const msg of messages) {
-    // An assistant message closes the current cluster; the next tool starts
-    // a fresh one.
+  for (let i = 0; i < messages.length; i++) {
+    const msg = messages[i];
+
+    // Hard boundary: assistant message ends the current section.
     if (
       msg?.type === 'response_item' &&
       msg.payload?.type === 'message' &&
@@ -167,11 +201,30 @@ function buildClusterBanners(
       continue;
     }
 
+    // Soft boundary: view_image inside a patch-containing cluster.
+    if (
+      msg?.type === 'response_item' &&
+      msg.payload?.type === 'function_call' &&
+      msg.payload?.name === 'view_image' &&
+      clustersWithPatches.has(cluster)
+    ) {
+      flush();
+      // view_image itself doesn't contribute to the next section's counts,
+      // and the section continues from the next message.
+      continue;
+    }
+
     if (msg?.type === 'response_item') {
       const p = msg.payload;
       if (p?.type === 'function_call' && p.name === 'shell_command' &&
           !(p.call_id && mcpCallIds.has(p.call_id))) {
+        if (firstToolIdx < 0) firstToolIdx = i;
         stats.shellCmds++;
+      } else if (p?.type === 'custom_tool_call') {
+        // Patches render at the custom_tool_call site; counts come from the
+        // paired patch_apply_end below. Anchor the section's first-tool
+        // index here so the banner lands before the patch in the output.
+        if (firstToolIdx < 0) firstToolIdx = i;
       }
     } else if (msg?.type === 'event_msg') {
       const p = msg.payload;
@@ -184,6 +237,7 @@ function buildClusterBanners(
           else stats.edits++;
         }
       } else if (p?.type === 'mcp_tool_call_end') {
+        if (firstToolIdx < 0) firstToolIdx = i;
         const server = p?.invocation?.server || '?';
         const label = labelForMcpCall(server, isBrowserMcpCall(p));
         stats.mcpLabels.set(label, (stats.mcpLabels.get(label) || 0) + 1);
@@ -206,10 +260,13 @@ function emptyTurnStats(): TurnStats {
 
 function formatTurnBanner(stats: TurnStats): string | null {
   const mcpCount = [...stats.mcpLabels.values()].reduce((a, b) => a + b, 0);
-  const total = stats.adds + stats.edits + stats.deletes + stats.shellCmds + mcpCount;
-  // Codex only shows a rollup when the turn touches multiple tools — a turn
-  // with a single command/edit/etc gets no banner in the UI.
-  if (total < 2) return null;
+  const patches = stats.adds + stats.edits + stats.deletes;
+  const total = patches + stats.shellCmds + mcpCount;
+  // Codex shows a banner whenever the section touched a patch (even a
+  // single-file edit shows up as "Edited 1 file"). For shell-only or
+  // MCP-only sections we still require at least two tools — single commands
+  // get no banner in the UI.
+  if (patches === 0 && total < 2) return null;
 
   const parts: string[] = [];
   if (stats.adds === 1) parts.push('created 1 file');
@@ -239,39 +296,6 @@ function joinWithAnd(items: string[]): string {
   if (items.length === 1) return items[0];
   if (items.length === 2) return items[0] + ' and ' + items[1];
   return items.slice(0, -1).join(', ') + ', and ' + items[items.length - 1];
-}
-
-/**
- * Mirror the emit logic just enough to know whether a message will actually
- * produce a tool-related line. Used to decide when to inject the turn banner.
- */
-function willEmitTool(
-  msg: any,
-  mcpCallIds: Set<string>,
-  consumedOutputs: Set<string>,
-): boolean {
-  if (msg?.type === 'response_item') {
-    const p = msg.payload;
-    if (!p) return false;
-    if (p.type === 'function_call') {
-      return !(p.call_id && mcpCallIds.has(p.call_id));
-    }
-    if (p.type === 'function_call_output') {
-      if (!p.call_id) return true;
-      return !(mcpCallIds.has(p.call_id) || consumedOutputs.has(p.call_id));
-    }
-    if (p.type === 'custom_tool_call') return true;
-    if (p.type === 'custom_tool_call_output') {
-      return !(p.call_id && consumedOutputs.has(p.call_id));
-    }
-    return false;
-  }
-  if (msg?.type === 'event_msg') {
-    const p = msg.payload;
-    if (!p) return false;
-    return p.type === 'mcp_tool_call_end' || p.type === 'image_generation_end';
-  }
-  return false;
 }
 
 // ---------------------------------------------------------------------------
