@@ -2,7 +2,7 @@
   "name": "antigravity-copy-full",
   "displayName": "Antigravity - Copy Full Trajectory",
   "description": "Extracts full LLM conversation trajectories (thoughts, tool traces, outputs) from Antigravity and Claude and formats them as Markdown.",
-  "version": "1.8.9",
+  "version": "1.9.0",
   "publisher": "henriquepasquini2",
   "license": "MIT",
   "icon": "images/icon.png",
@@ -27,6 +27,9 @@
     "claude-code",
     "cowork",
     "anthropic",
+    "codex",
+    "openai",
+    "gpt",
     "chat",
     "conversation",
     "thoughts",
@@ -53,7 +56,11 @@
     "onCommand:antigravity-copy-full.claudeExcelCopyWithPrompts",
     "onCommand:antigravity-copy-full.claudeExcelSetup",
     "onCommand:antigravity-copy-full.claudePptCopy",
-    "onCommand:antigravity-copy-full.claudePptCopyWithPrompts"
+    "onCommand:antigravity-copy-full.claudePptCopyWithPrompts",
+    "onCommand:antigravity-copy-full.codexCopySession",
+    "onCommand:antigravity-copy-full.codexCopySessionWithPrompts",
+    "onCommand:antigravity-copy-full.codexDumpSession",
+    "onCommand:antigravity-copy-full.codexExecutionTime"
   ],
   "main": "./out/extension.js",
   "contributes": {
@@ -142,6 +149,26 @@
         "command": "antigravity-copy-full.claudePptCopyWithPrompts",
         "title": "Copy Full Session with Prompts",
         "category": "Claude PowerPoint"
+      },
+      {
+        "command": "antigravity-copy-full.codexCopySession",
+        "title": "Copy Full Session",
+        "category": "Codex"
+      },
+      {
+        "command": "antigravity-copy-full.codexCopySessionWithPrompts",
+        "title": "Copy Full Session with Prompts",
+        "category": "Codex"
+      },
+      {
+        "command": "antigravity-copy-full.codexDumpSession",
+        "title": "Dump Raw Session (Debug)",
+        "category": "Codex"
+      },
+      {
+        "command": "antigravity-copy-full.codexExecutionTime",
+        "title": "Show Session Execution Time and Tokens",
+        "category": "Codex"
       }
     ],
     "keybindings": [
@@ -169,6 +196,11 @@
         "command": "antigravity-copy-full.claudeCodeCopySession",
         "key": "ctrl+shift+alt+j",
         "mac": "cmd+shift+alt+j"
+      },
+      {
+        "command": "antigravity-copy-full.codexCopySession",
+        "key": "ctrl+shift+alt+x",
+        "mac": "cmd+shift+alt+x"
       }
     ]
   },

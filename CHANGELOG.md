@@ -1,5 +1,22 @@
 # Changelog
 
+## [1.9.0] - 2026-05-23
+
+### Added
+- **Codex session support** — copy the full conversation trace from OpenAI Codex CLI sessions stored under `~/.codex/sessions/` (and `~/.codex/archived_sessions/`).
+- Four new commands under the **Codex** category:
+  - **Codex: Copy Full Session** (`Ctrl+Shift+Alt+X`) — copies the assistant trace as Markdown.
+  - **Codex: Copy Full Session with Prompts** — same, plus the real user prompt (auto-injected `<environment_context>` and `<permissions instructions>` blocks are filtered out).
+  - **Codex: Dump Raw Session (Debug)** — exports the parsed JSONL as JSON for inspection.
+  - **Codex: Show Session Execution Time and Tokens** — wall-clock span from line timestamps and token totals summed from `event_msg/token_count` entries.
+- Codex-specific rendering:
+  - `shell_command` function calls emitted as `Ran command` with the `cwd` and a `bash` fenced block.
+  - `apply_patch` custom tools rendered via the paired `event_msg/patch_apply_end`, showing per-file `Added` / `Edited` / `Deleted` / `Renamed` headers, unified diffs for updates, and full file bodies (with language-inferred fences) for adds.
+  - MCP tool calls rendered once as `MCP: <server>/<tool>` with arguments and result, suppressing the duplicate `function_call` + `function_call_output` pair that Codex also writes for the same call.
+  - `image_generation_end` emits the revised prompt and call id; `view_image` emits `Viewed image: <path>`.
+  - Encrypted `reasoning` blocks emit a single `[encrypted thinking]` placeholder (Codex CoT is opaque ciphertext that can't be decrypted client-side).
+  - ANSI escape sequences stripped from command output.
+
 ## [1.8.9] - 2026-05-21
 
 ### Changed

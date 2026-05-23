@@ -1,19 +1,20 @@
 # Antigravity Copy Full Conversation
 
-Copy the **complete** trace of **Antigravity**, **Claude Cowork**, **Claude Code**, and **Claude Excel** conversations — including the AI's **thought process** / **extended thinking**, web searches, tool calls, code blocks, and full responses — to your clipboard as Markdown.
+Copy the **complete** trace of **Antigravity**, **Claude Cowork**, **Claude Code**, **Claude Excel**, and **OpenAI Codex** conversations — including the AI's **thought process** / **extended thinking**, web searches, tool calls, code blocks, and full responses — to your clipboard as Markdown.
 
 ## The Problem
 
-Antigravity's built-in Export and Copy buttons only include the visible output text. Claude Desktop's Cowork mode and Claude Code CLI have no export at all. Claude's Excel add-in hides most of its work behind collapsed pills ("Used a tool", "Ran 3 scripts") that you can't easily copy. If you want the full, unabridged conversation trace, there's no native way to get it.
+Antigravity's built-in Export and Copy buttons only include the visible output text. Claude Desktop's Cowork mode, Claude Code CLI, and OpenAI Codex CLI have no export at all. Claude's Excel add-in hides most of its work behind collapsed pills ("Used a tool", "Ran 3 scripts") that you can't easily copy. If you want the full, unabridged conversation trace, there's no native way to get it.
 
 ## The Solution
 
-This extension provides four integrations:
+This extension provides five integrations:
 
 - **Antigravity** — connects directly to the running language server and fetches the full conversation trajectory at **DEBUG verbosity**, which includes everything the standard UI omits.
 - **Claude Cowork** — reads the JSONL session files that Claude Desktop writes to disk, extracting extended thinking blocks, tool calls, and responses that the UI doesn't let you copy.
 - **Claude Code** — reads the JSONL session files from `~/.claude/projects/`, capturing the same extended thinking, tool calls, and responses from Claude Code CLI sessions.
 - **Claude Excel / PowerPoint** — connects to the Office add-in's WebView2 via Chrome DevTools Protocol, auto-expands all collapsed tool pills, and scrapes the full conversation including code blocks, parameters, and results.
+- **OpenAI Codex** — reads the JSONL rollout files from `~/.codex/sessions/` and `~/.codex/archived_sessions/`, capturing shell commands, `apply_patch` diffs, MCP tool calls, generated images, and message content. Codex's chain-of-thought is server-side encrypted, so reasoning blocks emit an `[encrypted thinking]` placeholder.
 
 The output is a clean Markdown trace in chat order — no HTML, no metadata, no truncation.
 
@@ -40,6 +41,15 @@ The output is a clean Markdown trace in chat order — no HTML, no metadata, no 
 - **Auto-expand all pills** — "Used a tool", "Ran 3 scripts", "Fetched 5 pages", inner tool rows, "Show more", and "Result" toggles are all expanded automatically before copying
 - **Full tool content** — Office.js code blocks, tool parameters (JSON), tool results, search queries, and fetched pages
 - **One-time setup** — A single command sets the WebView2 debug port; after restarting Office, it works forever
+
+### OpenAI Codex
+- **Shell commands** — `shell_command` calls rendered as `Ran command` with `cwd` and a `bash` fenced block; output ANSI-stripped and inlined
+- **Patches** — `apply_patch` results rendered per-file with `Added` / `Edited` / `Deleted` / `Renamed` headers, unified diffs for updates, and the full new-file body for adds (language inferred from extension)
+- **MCP tool calls** — rendered once as `MCP: <server>/<tool>` with arguments and result, suppressing the duplicate `function_call` / `function_call_output` pair Codex also writes
+- **Image generation** — `image_generation_end` emits the revised prompt and call id; `view_image` emits a `Viewed image: <path>` line
+- **Reasoning placeholder** — Codex CoT is server-side encrypted (`encrypted_content` blob), so reasoning blocks emit a single `[encrypted thinking]` marker
+- **Bootstrap filtered** — the auto-injected `<environment_context>` and `<permissions instructions>` blocks are never copied, even with `--with-prompts`
+- **Session stats** — wall-clock span and token totals summed from `event_msg/token_count` entries
 
 ### Shared
 - **Two copy modes** — Response-only (default) or with user prompts included
@@ -101,6 +111,16 @@ The output is a clean Markdown trace in chat order — no HTML, no metadata, no 
 
 > **Note:** The extension auto-expands all collapsed pills before scraping, so you get the complete content even if you haven't manually expanded anything.
 
+### OpenAI Codex
+
+1. Run at least one Codex session so `~/.codex/sessions/` has rollout files (Codex writes them automatically)
+2. Open the Command Palette (`Ctrl+Shift+P`)
+3. Run one of:
+   - **Codex: Copy Full Session** (`Ctrl+Shift+Alt+X`)
+   - **Codex: Copy Full Session with Prompts**
+   - **Codex: Show Session Execution Time and Tokens** — wall-clock span and token totals
+4. Pick a session from the list (sorted by most recent; both `sessions/` and `archived_sessions/` are included)
+
 ### Keyboard Shortcuts
 
 | Shortcut              | Command                                              |
@@ -110,6 +130,7 @@ The output is a clean Markdown trace in chat order — no HTML, no metadata, no 
 | `Ctrl+Shift+Alt+L`   | Claude Cowork: Copy Full Session                      |
 | `Ctrl+Shift+Alt+K`   | Claude Cowork: Copy Full Session with Prompts         |
 | `Ctrl+Shift+Alt+J`   | Claude Code: Copy Full Session                        |
+| `Ctrl+Shift+Alt+X`   | Codex: Copy Full Session                              |
 
 On macOS, replace `Ctrl` with `Cmd`.
 
@@ -206,6 +227,20 @@ I'm currently focused on the hero section...
 **One-time setup:** The `Claude Excel: Setup Debug Port` command sets the `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS` user environment variable to `--remote-debugging-port=9242`. This tells all WebView2 instances (including Office add-ins) to open a CDP debug port on localhost. The variable persists across reboots. Office apps must be restarted once after setting it.
 
 > **Note:** Port 9242 is used instead of the common 9222 to avoid conflicts with Chrome, WhatsApp, and other WebView2 apps. When both Excel and PowerPoint are open, the extension uses process tree matching to connect to the correct app.
+
+### OpenAI Codex
+
+1. Scans `~/.codex/sessions/YYYY/MM/DD/` and `~/.codex/archived_sessions/` for `rollout-*.jsonl` files
+2. Parses each rollout to extract the session id (from the filename), `cwd` and CLI version (from `session_meta`), and the first real user prompt (skipping the auto-injected `<environment_context>` and `<permissions instructions>` blocks)
+3. On selection, reads every line and classifies by `type`:
+   - `response_item/message` (user/assistant) — emitted as text; developer + bootstrap user messages skipped
+   - `response_item/reasoning` — replaced with `[encrypted thinking]` placeholder (Codex CoT is server-side encrypted)
+   - `response_item/function_call` (`shell_command` / `view_image` / generic) — rendered as `Ran command`, `Viewed image: ...`, or `Used <name>` with args
+   - `response_item/custom_tool_call` (`apply_patch`) — rendered via the paired `event_msg/patch_apply_end` for richer per-file output
+   - `event_msg/mcp_tool_call_end` — rendered as `MCP: <server>/<tool>`; the duplicate `function_call` + `function_call_output` pair for the same call is suppressed
+   - `event_msg/image_generation_end` — emits revised prompt + call id
+   - All other `event_msg` subtypes (`token_count`, `task_started`, `agent_message`, etc.) are dropped to avoid duplicates and noise
+4. Formats everything as clean Markdown and copies to clipboard (or aggregates `event_msg/token_count` for stats)
 
 ## License
 

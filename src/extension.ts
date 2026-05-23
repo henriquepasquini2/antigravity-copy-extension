@@ -7,6 +7,8 @@ import { formatTrajectoryClean } from './formatter';
 import { discoverClaudeSessions, discoverClaudeCodeSessions, readSessionMessages, ClaudeSession } from './claude/sessionDiscovery';
 import { formatClaudeSession } from './claude/sessionFormatter';
 import { scrapeExcelConversation, isCdpAvailable, checkCdpStatus } from './claude/excelScraper';
+import { discoverCodexSessions, readCodexMessages, CodexSession } from './codex/sessionDiscovery';
+import { formatCodexSession } from './codex/sessionFormatter';
 
 let cachedLsInfo: LanguageServerInfo | null = null;
 
@@ -79,6 +81,22 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.commands.registerCommand(
       'antigravity-copy-full.claudePptCopyWithPrompts',
       () => claudeOfficeCopy(true, 'PowerPoint', 'POWERPNT.EXE'),
+    ),
+    vscode.commands.registerCommand(
+      'antigravity-copy-full.codexCopySession',
+      () => codexCopySession(false),
+    ),
+    vscode.commands.registerCommand(
+      'antigravity-copy-full.codexCopySessionWithPrompts',
+      () => codexCopySession(true),
+    ),
+    vscode.commands.registerCommand(
+      'antigravity-copy-full.codexDumpSession',
+      () => codexDumpSession(),
+    ),
+    vscode.commands.registerCommand(
+      'antigravity-copy-full.codexExecutionTime',
+      () => codexExecutionTime(),
     ),
   );
 }
@@ -630,6 +648,211 @@ async function pickClaudeCodeSession(title: string): Promise<ClaudeSession | und
 
   const selected = await vscode.window.showQuickPick(items, {
     placeHolder: 'Select a Claude Code session to copy',
+    title,
+    matchOnDescription: true,
+    matchOnDetail: true,
+  });
+
+  return selected?.session;
+}
+
+// ---------------------------------------------------------------------------
+// Codex commands
+// ---------------------------------------------------------------------------
+
+async function codexCopySession(includePrompts: boolean) {
+  try {
+    const session = await pickCodexSession(
+      includePrompts
+        ? 'Codex: Copy Full Session with Prompts'
+        : 'Codex: Copy Full Session',
+    );
+    if (!session) return;
+
+    await vscode.window.withProgress(
+      {
+        location: vscode.ProgressLocation.Notification,
+        title: 'Reading Codex session...',
+        cancellable: false,
+      },
+      async () => {
+        const messages = readCodexMessages(session.filePath);
+        const markdown = formatCodexSession(messages, includePrompts);
+
+        await vscode.env.clipboard.writeText(markdown);
+
+        const sizeStr = formatSize(markdown.length);
+        vscode.window.showInformationMessage(
+          `Codex session copied to clipboard (${sizeStr})`
+        );
+      },
+    );
+  } catch (err: any) {
+    vscode.window.showErrorMessage(
+      `Codex Copy: ${err?.message || String(err)}`
+    );
+  }
+}
+
+async function codexDumpSession() {
+  try {
+    const session = await pickCodexSession('Codex: Dump Raw Session (Debug)');
+    if (!session) return;
+
+    await vscode.window.withProgress(
+      {
+        location: vscode.ProgressLocation.Notification,
+        title: 'Dumping Codex session...',
+        cancellable: false,
+      },
+      async () => {
+        const messages = readCodexMessages(session.filePath);
+        const json = JSON.stringify(messages, null, 2);
+
+        const defaultName = `codex-session-${session.sessionId.substring(0, 8)}.json`;
+        const saveUri = await vscode.window.showSaveDialog({
+          defaultUri: vscode.Uri.file(
+            path.join(
+              vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || require('os').homedir(),
+              defaultName,
+            ),
+          ),
+          filters: { 'JSON': ['json'] },
+        });
+
+        if (!saveUri) return;
+
+        fs.writeFileSync(saveUri.fsPath, json, 'utf-8');
+
+        const sizeKb = (json.length / 1024).toFixed(1);
+        const action = await vscode.window.showInformationMessage(
+          `Session dumped (${sizeKb} KB): ${saveUri.fsPath}`,
+          'Open File',
+        );
+        if (action === 'Open File') {
+          const doc = await vscode.workspace.openTextDocument(saveUri);
+          await vscode.window.showTextDocument(doc);
+        }
+      },
+    );
+  } catch (err: any) {
+    vscode.window.showErrorMessage(
+      `Codex Dump: ${err?.message || String(err)}`
+    );
+  }
+}
+
+async function codexExecutionTime() {
+  try {
+    const session = await pickCodexSession('Codex: Show Session Execution Time and Tokens');
+    if (!session) return;
+    await analyzeCodexSessionTimeAndTokens(session);
+  } catch (err: any) {
+    vscode.window.showErrorMessage(
+      `Codex Execution Time: ${err?.message || String(err)}`
+    );
+  }
+}
+
+async function analyzeCodexSessionTimeAndTokens(session: CodexSession) {
+  await vscode.window.withProgress(
+    {
+      location: vscode.ProgressLocation.Notification,
+      title: 'Calculating execution time and tokens...',
+      cancellable: false,
+    },
+    async () => {
+      const raw = fs.readFileSync(session.filePath, 'utf-8');
+      const allLines: any[] = [];
+      for (const line of raw.split('\n')) {
+        if (!line.trim()) continue;
+        try { allLines.push(JSON.parse(line)); } catch { /* skip */ }
+      }
+
+      if (allLines.length === 0) {
+        vscode.window.showInformationMessage('Session has no messages.');
+        return;
+      }
+
+      let firstTime = 0;
+      let lastTime = 0;
+      let inputTokens = 0;
+      let outputTokens = 0;
+
+      for (const msg of allLines) {
+        if (msg.timestamp) {
+          const t = new Date(msg.timestamp).getTime();
+          if (!firstTime || t < firstTime) firstTime = t;
+          if (!lastTime || t > lastTime) lastTime = t;
+        }
+        // Codex emits per-turn token counts in event_msg/token_count.
+        if (msg.type === 'event_msg' && msg.payload?.type === 'token_count') {
+          const info = msg.payload?.info || msg.payload;
+          const usage = info?.last_token_usage || info?.token_usage || info?.usage;
+          if (usage) {
+            inputTokens += Number(usage.input_tokens || usage.prompt_tokens || 0);
+            outputTokens += Number(usage.output_tokens || usage.completion_tokens || 0);
+          }
+        }
+      }
+
+      if (!firstTime || !lastTime || firstTime === lastTime) {
+        vscode.window.showInformationMessage('Could not calculate duration from timestamps in this session.');
+        return;
+      }
+
+      const durationMs = lastTime - firstTime;
+      const durationStr = formatDuration(durationMs);
+
+      vscode.window.showInformationMessage(
+        `Total execution time: ${durationStr}\nTotal Input Tokens: ${inputTokens}\nTotal Output Tokens: ${outputTokens}`,
+        { modal: true }
+      );
+    },
+  );
+}
+
+interface CodexSessionPickItem extends vscode.QuickPickItem {
+  session: CodexSession;
+}
+
+async function pickCodexSession(title: string): Promise<CodexSession | undefined> {
+  const sessions = await vscode.window.withProgress(
+    {
+      location: vscode.ProgressLocation.Notification,
+      title: 'Scanning for Codex sessions...',
+      cancellable: false,
+    },
+    async () => discoverCodexSessions(),
+  );
+
+  if (sessions.length === 0) {
+    vscode.window.showWarningMessage(
+      'No Codex sessions found. Make sure you have used Codex at least once.'
+    );
+    return undefined;
+  }
+
+  const items: CodexSessionPickItem[] = sessions.map(s => {
+    const timeStr = formatRelativeTime(s.modified);
+    const label = s.firstPrompt
+      ? truncate(s.firstPrompt, 80)
+      : s.sessionName;
+    const sizeStr = s.sizeBytes < 1024
+      ? `${s.sizeBytes} B`
+      : `${(s.sizeBytes / 1024).toFixed(0)} KB`;
+    const tags = [s.sessionName, s.cliVersion, s.archived ? 'archived' : '', sizeStr].filter(Boolean);
+
+    return {
+      label,
+      description: timeStr,
+      detail: tags.join(' · '),
+      session: s,
+    };
+  });
+
+  const selected = await vscode.window.showQuickPick(items, {
+    placeHolder: 'Select a Codex session to copy',
     title,
     matchOnDescription: true,
     matchOnDetail: true,
