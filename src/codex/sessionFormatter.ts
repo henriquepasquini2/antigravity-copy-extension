@@ -91,7 +91,7 @@ function emitResponseItem(
       emitMessage(p, lines, includeUserInput);
       break;
     case 'reasoning':
-      emitReasoning(lines);
+      emitReasoning(p, lines);
       break;
     case 'function_call':
       // Skip MCP function calls — event_msg/mcp_tool_call_end will render them
@@ -166,11 +166,28 @@ function emitMessage(p: any, lines: string[], includeUserInput: boolean): void {
   }
 }
 
-function emitReasoning(lines: string[]): void {
-  // Codex encrypts its chain-of-thought (encrypted_content blob). The plaintext
-  // summary[] is essentially always empty. Emit a placeholder so the reader
-  // sees the model reasoned at this point.
-  lines.push('[encrypted thinking]');
+function emitReasoning(p: any, lines: string[]): void {
+  // Codex encrypts its chain-of-thought (`encrypted_content` blob), so the
+  // CLI / Cursor UI shows nothing for these. The `summary[]` field is almost
+  // always empty, but when Codex *does* populate it (rare) it contains a
+  // plaintext summary the user would see in the UI. Skip silently when
+  // there's nothing readable — emitting a placeholder would add noise that
+  // doesn't correspond to anything in the actual session display.
+  const summary = p?.summary;
+  if (!Array.isArray(summary) || summary.length === 0) return;
+
+  const text = summary
+    .map((s: any) => {
+      if (typeof s === 'string') return s;
+      if (typeof s?.text === 'string') return s.text;
+      return '';
+    })
+    .filter(Boolean)
+    .join('\n')
+    .trim();
+  if (!text) return;
+
+  lines.push(text);
   lines.push('');
 }
 

@@ -16,7 +16,7 @@
   - `function_call` and matching `function_call_output` paired by `call_id`, so commands appear directly above their output instead of all calls listed first and all outputs second (which is how Codex batches them on disk). Same pairing applied to `custom_tool_call` / `custom_tool_call_output`.
   - Files inside each `apply_patch` block are sorted case-insensitively by full path to match the order Codex's UI displays them, instead of Codex's raw on-disk emission order.
   - `image_generation_end` emits the revised prompt and call id; `view_image` emits `Viewed image: <path>`.
-  - Encrypted `reasoning` blocks emit a single `[encrypted thinking]` placeholder (Codex CoT is opaque ciphertext that can't be decrypted client-side).
+  - Encrypted `reasoning` blocks are skipped silently — Codex CoT is opaque ciphertext and Codex's UI shows nothing for them, so a placeholder would just add noise. If Codex ever populates the plaintext `summary[]` field (rare), the formatter emits that instead.
   - ANSI escape sequences stripped from command output.
 
 ## [1.8.9] - 2026-05-21
