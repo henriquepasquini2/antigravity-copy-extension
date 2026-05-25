@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.9.1] - 2026-05-25
+
+### Added
+- **macOS Codex desktop app support**. The Mac app uses tool name `exec_command` (the CLI uses `shell_command`) and its argument field is `cmd` rather than `command`. The formatter now recognizes both shapes and routes them through the same shell renderer, so Mac-app sessions stop falling through to the generic `Used exec_command / key: value` dump.
+
+### Changed
+- **Smarter shell headers**. Shell calls now render as `Ran <command>` (verb + the actual command, truncated to 80 chars), matching how Codex's UI labels each call (`Ran pwd`, `Ran git status --short`). Previously every call was a flat `Ran command`.
+- **Cleaner shell output**. The metadata header that both the CLI (`Exit code: 0\nWall time: 0.X seconds\nOutput:\n`) and the Mac app (`Chunk ID: ...\nWall time: ...\nProcess exited with code 0\nOriginal token count: ...\nOutput:\n`) prepend to every shell result is stripped, so the rendered output is just the actual command stdout — matching what Codex's UI shows below each shell pill.
+
 ## [1.9.0] - 2026-05-23
 
 ### Added

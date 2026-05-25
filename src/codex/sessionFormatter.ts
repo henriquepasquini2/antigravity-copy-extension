@@ -455,7 +455,10 @@ function emitFunctionCall(p: any, lines: string[]): void {
   const name: string = p.name || 'unknown';
   const args = parseJson(p.arguments);
 
-  if (name === 'shell_command') {
+  // The Codex CLI uses `shell_command`; the macOS Codex desktop app uses
+  // `exec_command`. Both are shell-style tools with the same shape, so route
+  // them through the same renderer.
+  if (name === 'shell_command' || name === 'exec_command') {
     emitShellCommand(args, lines);
     return;
   }
@@ -474,9 +477,19 @@ function emitFunctionCall(p: any, lines: string[]): void {
 }
 
 function emitShellCommand(args: any, lines: string[]): void {
-  const cmd = args?.command;
+  // CLI tool uses `command`; the Mac app's `exec_command` uses `cmd`.
+  const cmd = args?.command ?? args?.cmd;
   const workdir = args?.workdir;
-  lines.push('Ran command');
+  const firstLine = typeof cmd === 'string'
+    ? cmd.split('\n')[0]
+    : Array.isArray(cmd) ? cmd.join(' ') : '';
+
+  // Codex's UI uses "Ran <command>" with the actual command in the header.
+  // Truncate if the first line is too long so the header stays scannable.
+  const header = firstLine
+    ? 'Ran ' + (firstLine.length > 80 ? firstLine.slice(0, 77) + '...' : firstLine)
+    : 'Ran command';
+  lines.push(header);
   if (workdir) {
     lines.push(`cwd: ${workdir}`);
   }
@@ -492,10 +505,42 @@ function emitShellCommand(args: any, lines: string[]): void {
 }
 
 function emitFunctionCallOutput(p: any, lines: string[]): void {
-  const output = typeof p.output === 'string' ? stripAnsi(p.output).trim() : '';
-  if (!output) return;
-  lines.push(output);
+  const raw = typeof p.output === 'string' ? stripAnsi(p.output) : '';
+  if (!raw) return;
+  const cleaned = stripShellOutputMetadata(raw).trim();
+  if (!cleaned) return;
+  lines.push(cleaned);
   lines.push('');
+}
+
+/**
+ * Drop the verbose metadata header the macOS Codex desktop app prepends to
+ * `exec_command` outputs — lines like:
+ *
+ *   Chunk ID: e28bde
+ *   Wall time: 0.0036 seconds
+ *   Process exited with code 0
+ *   Original token count: 10
+ *   Output:
+ *
+ * Codex's own UI hides these (it just shows the actual command output and a
+ * "Success" badge), so we hide them too. The CLI's `shell_command` outputs
+ * already use a simpler `Exit code: N\nWall time: ...\nOutput:\n<body>`
+ * shape, which this function also normalizes by trimming the leading
+ * `Exit code` / `Wall time` / `Output:` framing.
+ */
+function stripShellOutputMetadata(s: string): string {
+  const metadataLine = /^(Chunk ID|Wall time|Process exited with code|Original token count|Exit code)\b.*$/i;
+  const lines = s.split('\n');
+  // Drop leading metadata lines.
+  while (lines.length > 0 && (metadataLine.test(lines[0].trim()) || lines[0].trim() === '')) {
+    lines.shift();
+  }
+  // Drop an `Output:` marker if it's the next line.
+  if (lines.length > 0 && lines[0].trim() === 'Output:') {
+    lines.shift();
+  }
+  return lines.join('\n');
 }
 
 // ---------------------------------------------------------------------------
